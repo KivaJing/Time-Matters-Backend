@@ -13,7 +13,8 @@ python generator/event_generator.py
 
 ------------
 python observer/observer.py
-
+python rule_engine/rule_engine.py
+python reasoner/llm_reasoner.py
 -------------------
 1. 
 SHOW TABLES;
@@ -28,8 +29,19 @@ SELECT * FROM complex_events_eval_v3 EMIT CHANGES;
 
 
 PRINT semantic_events FROM BEGINNING;
+PRINT reasoning_events FROM BEGINNING;
 ------------------
 确保 ksqlDB 容器在跑（现在是 docker_ksqldb_1 监听宿主机 8088），然后：
 
 python deploy_ksql.py ksql_config.json
 
+------------------
+
+sudo systemctl enable --now ollama
+sudo systemctl status ollama --no-pager
+
+---------------
+git status
+git add .
+git commit -m "your message"
+git push
