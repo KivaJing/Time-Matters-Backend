@@ -1,0 +1,18 @@
+{
+  "kafka": {
+    "bootstrap_servers": "localhost:9092",
+    "input_topic": "complex_events_eval",
+    "output_topic": "semantic_events",
+    "group_id": "rule-engine-group"
+  },
+
+  "thresholds": {
+    "min_events": 5,
+    "rt_moderate_span": 300,
+    "rt_high_span": 600,
+    "max_latency_ms": 3000
+  },
+
+  "cooldown_sec": 5,
+  "history_window_size": 5
+}

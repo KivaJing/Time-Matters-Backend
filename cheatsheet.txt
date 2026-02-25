@@ -1,0 +1,35 @@
+cd ~/kafka-cep-prototype/docker
+docker-compose down
+docker-compose up -d
+
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+docker exec -it docker_ksqldb_1 ksql http://localhost:8088
+
+--------------------
+cd ~/kafka-cep-prototype
+source venv/bin/activate
+python generator/event_generator.py
+
+------------
+python observer/observer.py
+
+-------------------
+1. 
+SHOW TABLES;
+
+2.
+SELECT user_id, window_start, window_end, event_count, max_rt, min_rt, last_event_ts, latency_ms
+FROM complex_events_eval
+EMIT CHANGES;
+
+2 or.
+SELECT * FROM complex_events_eval_v3 EMIT CHANGES;
+
+
+PRINT semantic_events FROM BEGINNING;
+------------------
+确保 ksqlDB 容器在跑（现在是 docker_ksqldb_1 监听宿主机 8088），然后：
+
+python deploy_ksql.py ksql_config.json
+

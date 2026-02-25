@@ -1,0 +1,19 @@
+{
+  "ksqldb_url": "http://localhost:8088",
+  "auto_offset_reset": "earliest",
+  "cache_max_bytes_buffering": 0,
+  "processing_guarantee": "at_least_once",
+  "commit_interval_ms": 50,
+
+  "raw_topic": "raw_events",
+  "out_table": "complex_events_eval",
+  "out_topic": "complex_events_eval",
+
+  "window_size_sec": 5, 
+  "window_advance_sec": 1,
+
+  "min_events": 5,
+  "rt_span_ms": 300,
+
+  "drop_output_topic": true
+}
