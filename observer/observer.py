@@ -1,106 +1,150 @@
 #!/usr/bin/env python3
 import json
 import time
+import os
 from datetime import datetime
 from confluent_kafka import Consumer
 
 BOOTSTRAP_SERVERS = "localhost:9092"
-TOPIC = "complex_events_eval"
+TOPIC = "complex_events_eval_w10_c50"
 
-def pick(d, *keys, default=None):
+WARMUP_SEC = 2
+MEASURE_SEC = 30
+
+TARGET_RUN_ID = os.getenv("RUN_ID")  
+
+def pick(d, *keys):
     for k in keys:
         if isinstance(d, dict) and k in d and d[k] is not None:
             return d[k]
-    return default
+    return None
 
-def parse_ksql_key(key_bytes: bytes) -> dict:
+
+def parse_ksql_key(key_bytes):
     if not key_bytes:
         return {}
 
-    s = key_bytes.decode("utf-8", errors="ignore").strip()
-
-    # Find JSON object bounds
+    s = key_bytes.decode("utf-8", errors="ignore")
     start = s.find("{")
     end = s.rfind("}")
-    if start == -1 or end == -1 or end <= start:
-        return {"__raw_key": s}
 
-    json_part = s[start : end + 1]
+    if start == -1 or end == -1:
+        return {}
+
     try:
-        obj = json.loads(json_part)
-        return obj if isinstance(obj, dict) else {"__raw_key": s}
-    except Exception:
-        return {"__raw_key": s, "__json_part": json_part}
+        return json.loads(s[start:end+1])
+    except:
+        return {}
+
+
+def percentile(data, p):
+    if not data:
+        return None
+    data = sorted(data)
+    k = int(len(data) * p / 100)
+    return data[min(k, len(data)-1)]
+
 
 def main():
+
     c = Consumer({
         "bootstrap.servers": BOOTSTRAP_SERVERS,
-        "group.id": f"observer-{int(time.time())}",
+        "group.id": f"observer-{int(time.time()*1000)}",
         "auto.offset.reset": "latest",
         "enable.auto.commit": True,
     })
 
     c.subscribe([TOPIC])
-    print("Observer started, listening to:", TOPIC)
 
-    try:
-        while True:
-            msg = c.poll(1.0)
-            if msg is None:
-                continue
-            if msg.error():
-                print("consumer error:", msg.error())
-                continue
+    print(f"Observer started. topic={TOPIC} group={c.list_topics().orig_broker_name}")
+    print(f"Warmup={WARMUP_SEC}s, Measure={MEASURE_SEC}s")
 
-            now_ms = int(time.time() * 1000)
+    start = time.time()
+    measure_start = start + WARMUP_SEC
+    measure_end = measure_start + MEASURE_SEC
 
-            raw_key = msg.key()
-            raw_val = msg.value()
+    e2e_total = []
+    ksql_part = []
+    consumer_part = []
 
-            # ---- decode VALUE (pure JSON) ----
-            event = {}
-            if raw_val:
-                try:
-                    event = json.loads(raw_val.decode("utf-8"))
-                except Exception as e:
-                    print("VALUE json decode failed:", e, "raw_val_head=", raw_val[:200])
-                    continue
+    polled = 0
+    committed = 0
 
-            # ---- decode KEY (JSON prefix + binary suffix) ----
-            key_obj = parse_ksql_key(raw_key)
+    while time.time() < measure_end:
 
-            run_id  = pick(event, "run_id", "RUN_ID")  or pick(key_obj, "run_id", "RUN_ID")
-            user_id = pick(event, "user_id", "USER_ID") or pick(key_obj, "user_id", "USER_ID")
+        msg = c.poll(1.0)
 
-            last_event_ts = pick(event, "last_event_ts_ms", "LAST_EVENT_TS_MS", "last_event_ts", "LAST_EVENT_TS")
-            ksql_emit_ts  = pick(event, "ksql_emit_ts_ms", "KSQL_EMIT_TS_MS")
-            event_count   = pick(event, "event_count", "EVENT_COUNT")
+        if msg is None:
+            continue
 
-            if last_event_ts is None:
-                # print("missing last_event_ts, key_obj=", key_obj, "value=", event)
-                continue
+        if msg.error():
+            print("consumer error:", msg.error())
+            continue
 
-            e2e_total_ms = now_ms - int(last_event_ts)
+        polled += 1
 
-            e2e_ksql_ms = None
-            e2e_kafka_consumer_ms = None
-            if ksql_emit_ts is not None:
-                ksql_emit_ts = int(ksql_emit_ts)
-                e2e_ksql_ms = ksql_emit_ts - int(last_event_ts)
-                e2e_kafka_consumer_ms = now_ms - ksql_emit_ts
+        now_ms = int(time.time()*1000)
 
-            ts = datetime.now().isoformat(timespec="seconds")
+        raw_key = msg.key()
+        raw_val = msg.value()
 
-            if e2e_ksql_ms is None:
-                print(f"[{ts}] run_id={run_id} user_id={user_id} count={event_count} E2E_total_ms={e2e_total_ms}")
-            else:
-                print(
-                    f"[{ts}] run_id={run_id} user_id={user_id} count={event_count} "
-                    f"E2E_total_ms={e2e_total_ms} E2E_ksql_ms={e2e_ksql_ms} "
-                    f"E2E_kafka_consumer_ms={e2e_kafka_consumer_ms}"
-                )
-    finally:
-        c.close()
+        try:
+            event = json.loads(raw_val.decode())
+        except:
+            continue
+
+        key_obj = parse_ksql_key(raw_key)
+
+        run_id = pick(event, "run_id", "RUN_ID") or pick(key_obj, "run_id", "RUN_ID")
+
+        if TARGET_RUN_ID and run_id != TARGET_RUN_ID:
+            continue
+
+        last_event_ts = pick(event, "last_event_ts_ms", "LAST_EVENT_TS_MS")
+        emit_ts = pick(event, "ksql_emit_ts_ms", "KSQL_EMIT_TS_MS")
+
+        if last_event_ts is None or emit_ts is None:
+            continue
+
+        last_event_ts = int(last_event_ts)
+        emit_ts = int(emit_ts)
+
+        # measurement window
+        if last_event_ts < measure_start * 1000:
+            continue
+
+        total = now_ms - last_event_ts
+        ksql = emit_ts - last_event_ts
+        consumer = now_ms - emit_ts
+
+        e2e_total.append(total)
+        ksql_part.append(ksql)
+        consumer_part.append(consumer)
+
+        committed += 1
+
+    c.close()
+
+    print()
+    print(f"[{datetime.now().isoformat(timespec='seconds')}] Done. polled={polled}, committed={committed}")
+
+    def report(name, data):
+        if not data:
+            print(f"{name}: n=0")
+            return
+
+        print(
+            f"{name}: n={len(data)} "
+            f"mean={sum(data)/len(data):.1f}ms "
+            f"p50={percentile(data,50)}ms "
+            f"p95={percentile(data,95)}ms "
+            f"max={max(data)}ms"
+        )
+
+    report("E2E_total(now-last_event)", e2e_total)
+    report("ksql_part(emit-last_event)", ksql_part)
+    report("consumer_part(now-emit)", consumer_part)
+
 
 if __name__ == "__main__":
     main()

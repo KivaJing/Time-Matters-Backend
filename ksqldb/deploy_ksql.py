@@ -19,9 +19,10 @@ CREATE STREAM IF NOT EXISTS raw_events (
   timestamp BIGINT,
   reaction_time_ms INT
 ) WITH (
-  KAFKA_TOPIC='{raw_topic}',
+  KAFKA_TOPIC='raw_events',
   VALUE_FORMAT='JSON',
-  TIMESTAMP='timestamp'
+  TIMESTAMP='timestamp',
+  PARTITIONS=3
 );
 
 {drop_stmt}
@@ -51,7 +52,6 @@ HAVING COUNT(*) >= {min_events}
 EMIT CHANGES;
 """
 
-
 def http_post_json(url: str, payload: dict, timeout_sec: int = 30) -> dict:
     data = json.dumps(payload).encode("utf-8")
     req = request.Request(
@@ -70,6 +70,18 @@ def http_post_json(url: str, payload: dict, timeout_sec: int = 30) -> dict:
     except Exception as e:
         raise RuntimeError(f"Request failed: {e}") from None
 
+def wait_ksqldb_ready(ksql_url: str, wait_sec: int = 60, interval_sec: int = 2):
+    deadline = time.time() + wait_sec
+    while time.time() < deadline:
+        try:
+            # ksql endpoint expects POST; but we can still check TCP by a short POST with empty statement
+            payload = {"ksql": "SHOW STREAMS;", "streamsProperties": {}}
+            http_post_json(ksql_url, payload, timeout_sec=5)
+            return True
+        except Exception as e:
+            print(f"[ksql_deployer] ksqlDB not ready yet: {e}; retrying...")
+            time.sleep(interval_sec)
+    return False
 
 def load_config(path: str) -> dict:
     with open(path, "r", encoding="utf-8") as f:
@@ -131,6 +143,9 @@ def main():
 
     print(f"Submitting SQL to {ksql_url}")
     print(f"Saved rendered SQL to {sql_path}")
+
+    if not wait_ksqldb_ready(ksql_url, wait_sec=90):
+        raise RuntimeError("ksqlDB did not become ready in time")
 
     resp = http_post_json(ksql_url, payload, timeout_sec=60)
     # ksql returns a list of command statuses / errors

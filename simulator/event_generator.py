@@ -2,9 +2,10 @@ import json
 import time
 import uuid
 import random
+import os
 from confluent_kafka import Producer
 
-BOOTSTRAP_SERVERS = "localhost:9092"
+BOOTSTRAP_SERVERS = os.getenv("BOOTSTRAP_SERVERS", "localhost:9092")
 TOPIC = "raw_events"
 RUN_ID = str(uuid.uuid4())
 

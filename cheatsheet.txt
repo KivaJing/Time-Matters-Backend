@@ -1,4 +1,4 @@
-cd ~/kafka-cep-prototype/docker
+cd ~/kafka-cep-prototype
 docker-compose down
 docker-compose up -d
 
@@ -9,12 +9,12 @@ docker exec -it docker_ksqldb_1 ksql http://localhost:8088
 --------------------
 cd ~/kafka-cep-prototype
 source venv/bin/activate
-python generator/event_generator.py
+python simulator/event_generator.py
 
 ------------
 python observer/observer.py
 python rule_engine/rule_engine.py
-python reasoner/llm_reasoner.py
+python llm_reasoner/llm_reasoner.py
 -------------------
 1. 
 SHOW TABLES;
@@ -45,3 +45,6 @@ git status
 git add .
 git commit -m "your message"
 git push
+
+------------------
+docker-compose logs --tail=200 rule_engine
