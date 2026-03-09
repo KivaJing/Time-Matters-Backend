@@ -14,12 +14,16 @@ SET 'processing.guarantee' = '{processing_guarantee}';
 SET 'ksql.streams.commit.interval.ms' = '{commit_interval_ms}';
 
 CREATE STREAM IF NOT EXISTS raw_events (
+  event_id STRING,
   run_id STRING,
   user_id STRING,
   timestamp BIGINT,
-  reaction_time_ms INT
+  event_type STRING,
+  reaction_time_ms INT,
+  scenario STRING,
+  sent_at_ms BIGINT
 ) WITH (
-  KAFKA_TOPIC='raw_events',
+  KAFKA_TOPIC='{raw_topic}',
   VALUE_FORMAT='JSON',
   TIMESTAMP='timestamp',
   PARTITIONS=3
@@ -41,9 +45,11 @@ SELECT
   COUNT(*)    AS event_count,
   MAX(reaction_time_ms) AS max_rt,
   MIN(reaction_time_ms) AS min_rt,
+  MAX(sent_at_ms) AS last_sent_at_ms,
   MAX(timestamp) AS last_event_ts_ms,
+  LATEST_BY_OFFSET(scenario) AS latest_scenario,
   UNIX_TIMESTAMP() AS ksql_emit_ts_ms,
-  (UNIX_TIMESTAMP() - MAX(timestamp)) AS ksql_latency_ms
+  (UNIX_TIMESTAMP() - MAX(sent_at_ms)) AS ksql_latency_ms
 FROM raw_events
 WINDOW HOPPING (SIZE {window_size_sec} SECONDS, ADVANCE BY {window_advance_sec} SECOND)
 GROUP BY run_id, user_id
@@ -74,7 +80,6 @@ def wait_ksqldb_ready(ksql_url: str, wait_sec: int = 60, interval_sec: int = 2):
     deadline = time.time() + wait_sec
     while time.time() < deadline:
         try:
-            # ksql endpoint expects POST; but we can still check TCP by a short POST with empty statement
             payload = {"ksql": "SHOW STREAMS;", "streamsProperties": {}}
             http_post_json(ksql_url, payload, timeout_sec=5)
             return True
@@ -87,10 +92,18 @@ def load_config(path: str) -> dict:
     with open(path, "r", encoding="utf-8") as f:
         cfg = json.load(f)
 
-    # basic validation / defaults
+    if "KSQLDB_URL" in os.environ:
+        cfg["ksqldb_url"] = os.environ["KSQLDB_URL"]
+
     required = [
-        "ksqldb_url", "raw_topic", "out_table", "out_topic",
-        "window_size_sec", "window_advance_sec", "min_events", "rt_span_ms"
+        "ksqldb_url",
+        "raw_topic",
+        "out_table",
+        "out_topic",
+        "window_size_sec",
+        "window_advance_sec",
+        "min_events",
+        "rt_span_ms",
     ]
     missing = [k for k in required if k not in cfg]
     if missing:
@@ -104,9 +117,11 @@ def load_config(path: str) -> dict:
 
     return cfg
 
-
 def build_sql(cfg: dict) -> str:
-    drop_stmt = f"DROP TABLE IF EXISTS {cfg['out_table']} " + ("DELETE TOPIC;" if cfg["drop_output_topic"] else ";")
+    drop_stmt = f"DROP TABLE IF EXISTS {cfg['out_table']} " + (
+        "DELETE TOPIC;" if cfg["drop_output_topic"] else ";"
+    )
+
     return SQL_TEMPLATE.format(
         auto_offset_reset=cfg["auto_offset_reset"],
         cache_max_bytes_buffering=cfg["cache_max_bytes_buffering"],
@@ -122,14 +137,12 @@ def build_sql(cfg: dict) -> str:
         drop_stmt=drop_stmt,
     )
 
-
 def main():
     cfg_path = sys.argv[1] if len(sys.argv) > 1 else "ksql_config.json"
     cfg = load_config(cfg_path)
 
     sql = build_sql(cfg)
 
-    # archive generated sql for reproducibility
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_dir = os.path.join("runs", f"ksql_{ts}")
     os.makedirs(out_dir, exist_ok=True)
@@ -137,7 +150,6 @@ def main():
     with open(sql_path, "w", encoding="utf-8") as f:
         f.write(sql)
 
-    # Submit to ksqlDB
     ksql_url = cfg["ksqldb_url"].rstrip("/") + "/ksql"
     payload = {"ksql": sql, "streamsProperties": {}}
 
@@ -148,9 +160,7 @@ def main():
         raise RuntimeError("ksqlDB did not become ready in time")
 
     resp = http_post_json(ksql_url, payload, timeout_sec=60)
-    # ksql returns a list of command statuses / errors
     print(json.dumps(resp, indent=2))
-
 
 if __name__ == "__main__":
     main()

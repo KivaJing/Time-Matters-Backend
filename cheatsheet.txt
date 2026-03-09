@@ -7,33 +7,77 @@ docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 docker exec -it docker_ksqldb_1 ksql http://localhost:8088
 
 --------------------
+进入虚拟环境：
 cd ~/kafka-cep-prototype
 source venv/bin/activate
-python simulator/event_generator.py
+
+部署cep：
+cd ksqldb
+KSQLDB_URL=http://localhost:8088 python deploy_ksql.py ksql_config.json
+
+observer：
+cd observer
+延迟测试：
+TOPIC=complex_events_eval_w5_c10 \
+RUN_ID=test_w5_c10_r1 \
+python observer.py
+
+功能测试：
+1.
+WARMUP_SEC=5 MEASURE_SEC=60 \
+TOPIC=complex_events_eval_w10_c10 \
+RUN_ID=func_w10_c10_baseline_r1 \
+python observer.py
+
+2.
+WARMUP_SEC=5 MEASURE_SEC=60 \
+TOPIC=complex_events_eval_w10_c10 \
+RUN_ID=func_w10_c10_periodic_r1 \
+python observer.py
+
+3.
+WARMUP_SEC=5 MEASURE_SEC=60 \
+TOPIC=complex_events_eval_w10_c10 \
+RUN_ID=func_w10_c10_mixed_r1 \
+python observer.py
+
+event generator：
+cd simulator
+
+功能测试：
+1.
+RUN_ID=func_w10_c10_baseline_r1 \
+MODE=baseline_only \
+NUM_USERS=3 \
+DURATION_SEC=90 \
+python event_generator.py
+
+2.
+RUN_ID=func_w10_c10_periodic_r1 \
+MODE=periodic_trigger \
+NUM_USERS=3 \
+DURATION_SEC=90 \
+python event_generator.py
+
+3.
+RUN_ID=func_w10_c10_mixed_r1 \
+MODE=mixed \
+NUM_USERS=3 \
+DURATION_SEC=90 \
+python event_generator.py
+
+延迟测试 trigger测试：
+
+RUN_ID=test_w5_c10_r1 \
+MODE=periodic_trigger \
+NUM_USERS=3 \
+DURATION_SEC=60 \
+python event_generator.py
 
 ------------
 python observer/observer.py
 python rule_engine/rule_engine.py
 python llm_reasoner/llm_reasoner.py
--------------------
-1. 
-SHOW TABLES;
-
-2.
-SELECT user_id, window_start, window_end, event_count, max_rt, min_rt, last_event_ts, latency_ms
-FROM complex_events_eval
-EMIT CHANGES;
-
-2 or.
-SELECT * FROM complex_events_eval_v3 EMIT CHANGES;
-
-
-PRINT semantic_events FROM BEGINNING;
-PRINT reasoning_events FROM BEGINNING;
-------------------
-确保 ksqlDB 容器在跑（现在是 docker_ksqldb_1 监听宿主机 8088），然后：
-
-python deploy_ksql.py ksql_config.json
 
 ------------------
 

@@ -7,10 +7,10 @@
 
   "raw_topic": "raw_events",
 
-  "out_table": "complex_events_eval_w10_c50",
-  "out_topic": "complex_events_eval_w10_c50",
+  "out_table": "complex_events_eval_w5_c50",
+  "out_topic": "complex_events_eval_w5_c50",
 
-  "window_size_sec": 10,
+  "window_size_sec": 5,
   "window_advance_sec": 1,
 
   "min_events": 5,
