@@ -1,18 +1,21 @@
 {
   "kafka": {
     "bootstrap_servers": "kafka:29092",
-    "input_topic": "complex_events_eval_w5_c50",
+    "input_topic": "risk_state_windows_new",
     "output_topic": "semantic_events",
-    "group_id": "rule-engine-group"
+    "group_id": "rule-engine_new"
   },
-
   "thresholds": {
-    "min_events": 5,
-    "rt_moderate_span": 300,
-    "rt_high_span": 500,
-    "max_latency_ms": 3000
+    "craving_high": 7.0,
+    "craving_very_high": 8.5,
+    "stress_high": 7.0,
+    "stress_very_high": 8.5,
+    "motivation_low": 3.0,
+    "motivation_very_low": 2.0,
+    "self_efficacy_low": 3.0,
+    "self_efficacy_very_low": 2.0,
+    "combined_high_sum": 14.0
   },
-
-  "cooldown_sec": 5,
+  "cooldown_sec": 15,
   "history_window_size": 5
 }

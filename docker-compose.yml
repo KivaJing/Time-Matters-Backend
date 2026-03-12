@@ -1,7 +1,6 @@
 version: "3.8"
 
 services:
-
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
     ports:
@@ -21,25 +20,21 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-
+      KAFKA_DELETE_TOPIC_ENABLE: "true"
     healthcheck:
       test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "kafka:29092"]
       interval: 10s
       timeout: 5s
       retries: 10
-
     volumes:
       - kafka-data:/var/lib/kafka/data
-
 
   ksqldb:
     image: confluentinc/cp-ksqldb-server:7.5.9
@@ -53,17 +48,11 @@ services:
       KSQL_LISTENERS: "http://0.0.0.0:8088"
       KSQL_KSQL_SERVICE_ID: "ksql_service_1"
       KSQL_KSQL_STREAMS_AUTO_OFFSET_RESET: "earliest"
-
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8088/info"]
       interval: 10s
       timeout: 5s
       retries: 10
-
-
-  # -----------------------------------
-  # deploy ksql streams/tables
-  # -----------------------------------
 
   ksql_deployer:
     build: .
@@ -73,12 +62,7 @@ services:
     command: python ksqldb/deploy_ksql.py ksqldb/ksql_config.json
     volumes:
       - .:/app
-    restart: on-failure
-
-
-  # -----------------------------------
-  # rule based reasoning
-  # -----------------------------------
+    restart: "no"
 
   rule_engine:
     build: .
@@ -95,11 +79,6 @@ services:
       PYTHONUNBUFFERED: "1"
     restart: unless-stopped
 
-
-  # -----------------------------------
-  # LLM reasoning
-  # -----------------------------------
-
   llm_reasoner:
     build: .
     depends_on:
@@ -111,10 +90,23 @@ services:
     environment:
       BOOTSTRAP: kafka:29092
       OLLAMA_URL: http://host.docker.internal:11434/api/chat
+      PYTHONUNBUFFERED: "1"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
+  intervention_engine:
+    build: .
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command: python intervention_engine/intervention_engine.py
+    volumes:
+      - .:/app
+    environment:
+      BOOTSTRAP: kafka:29092
+      PYTHONUNBUFFERED: "1"
+    restart: unless-stopped
 
 volumes:
   kafka-data:

@@ -6,20 +6,29 @@ import time
 from datetime import datetime
 from urllib import request, error
 
-
 SQL_TEMPLATE = """\
 SET 'auto.offset.reset' = '{auto_offset_reset}';
 SET 'cache.max.bytes.buffering' = '{cache_max_bytes_buffering}';
 SET 'processing.guarantee' = '{processing_guarantee}';
 SET 'ksql.streams.commit.interval.ms' = '{commit_interval_ms}';
 
-CREATE STREAM IF NOT EXISTS raw_events (
+CREATE STREAM IF NOT EXISTS raw_state_events (
   event_id STRING,
   run_id STRING,
   user_id STRING,
   timestamp BIGINT,
   event_type STRING,
-  reaction_time_ms INT,
+  logical_step INT,
+  logical_minutes_per_step DOUBLE,
+  craving INT,
+  stress INT,
+  motivation INT,
+  self_efficacy INT,
+  strategy_use INT,
+  receptivity INT,
+  is_moving INT,
+  in_meeting INT,
+  location_type STRING,
   scenario STRING,
   sent_at_ms BIGINT
 ) WITH (
@@ -42,21 +51,38 @@ SELECT
   user_id,
   WINDOWSTART AS window_start_ms,
   WINDOWEND   AS window_end_ms,
-  COUNT(*)    AS event_count,
-  MAX(reaction_time_ms) AS max_rt,
-  MIN(reaction_time_ms) AS min_rt,
+
+  COUNT(*) AS event_count,
+
+  AVG(CAST(craving AS DOUBLE)) AS craving_avg,
+  AVG(CAST(stress AS DOUBLE)) AS stress_avg,
+  AVG(CAST(motivation AS DOUBLE)) AS motivation_avg,
+  AVG(CAST(self_efficacy AS DOUBLE)) AS self_efficacy_avg,
+
+  MIN(motivation) AS motivation_min,
+  MIN(self_efficacy) AS self_efficacy_min,
+  MAX(craving) AS craving_max,
+  MAX(stress) AS stress_max,
+
+  LATEST_BY_OFFSET(strategy_use) AS latest_strategy_use,
+  LATEST_BY_OFFSET(receptivity) AS latest_receptivity,
+  LATEST_BY_OFFSET(is_moving) AS latest_is_moving,
+  LATEST_BY_OFFSET(in_meeting) AS latest_in_meeting,
+  LATEST_BY_OFFSET(location_type) AS latest_location_type,
+  LATEST_BY_OFFSET(scenario) AS latest_scenario,
+
   MAX(sent_at_ms) AS last_sent_at_ms,
   MAX(timestamp) AS last_event_ts_ms,
-  LATEST_BY_OFFSET(scenario) AS latest_scenario,
   UNIX_TIMESTAMP() AS ksql_emit_ts_ms,
   (UNIX_TIMESTAMP() - MAX(sent_at_ms)) AS ksql_latency_ms
-FROM raw_events
-WINDOW HOPPING (SIZE {window_size_sec} SECONDS, ADVANCE BY {window_advance_sec} SECOND)
+
+FROM raw_state_events
+WINDOW HOPPING (SIZE {window_size_sec} SECONDS, ADVANCE BY {window_advance_sec} SECONDS)
 GROUP BY run_id, user_id
 HAVING COUNT(*) >= {min_events}
-   AND (MAX(reaction_time_ms) - MIN(reaction_time_ms)) >= {rt_span_ms}
 EMIT CHANGES;
 """
+
 
 def http_post_json(url: str, payload: dict, timeout_sec: int = 30) -> dict:
     data = json.dumps(payload).encode("utf-8")
@@ -76,6 +102,7 @@ def http_post_json(url: str, payload: dict, timeout_sec: int = 30) -> dict:
     except Exception as e:
         raise RuntimeError(f"Request failed: {e}") from None
 
+
 def wait_ksqldb_ready(ksql_url: str, wait_sec: int = 60, interval_sec: int = 2):
     deadline = time.time() + wait_sec
     while time.time() < deadline:
@@ -87,6 +114,7 @@ def wait_ksqldb_ready(ksql_url: str, wait_sec: int = 60, interval_sec: int = 2):
             print(f"[ksql_deployer] ksqlDB not ready yet: {e}; retrying...")
             time.sleep(interval_sec)
     return False
+
 
 def load_config(path: str) -> dict:
     with open(path, "r", encoding="utf-8") as f:
@@ -103,7 +131,6 @@ def load_config(path: str) -> dict:
         "window_size_sec",
         "window_advance_sec",
         "min_events",
-        "rt_span_ms",
     ]
     missing = [k for k in required if k not in cfg]
     if missing:
@@ -112,10 +139,10 @@ def load_config(path: str) -> dict:
     cfg.setdefault("auto_offset_reset", "earliest")
     cfg.setdefault("cache_max_bytes_buffering", 0)
     cfg.setdefault("processing_guarantee", "at_least_once")
-    cfg.setdefault("commit_interval_ms", 100)
+    cfg.setdefault("commit_interval_ms", 50)
     cfg.setdefault("drop_output_topic", True)
-
     return cfg
+
 
 def build_sql(cfg: dict) -> str:
     drop_stmt = f"DROP TABLE IF EXISTS {cfg['out_table']} " + (
@@ -133,14 +160,13 @@ def build_sql(cfg: dict) -> str:
         window_size_sec=int(cfg["window_size_sec"]),
         window_advance_sec=int(cfg["window_advance_sec"]),
         min_events=int(cfg["min_events"]),
-        rt_span_ms=int(cfg["rt_span_ms"]),
         drop_stmt=drop_stmt,
     )
+
 
 def main():
     cfg_path = sys.argv[1] if len(sys.argv) > 1 else "ksql_config.json"
     cfg = load_config(cfg_path)
-
     sql = build_sql(cfg)
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -161,6 +187,7 @@ def main():
 
     resp = http_post_json(ksql_url, payload, timeout_sec=60)
     print(json.dumps(resp, indent=2))
+
 
 if __name__ == "__main__":
     main()

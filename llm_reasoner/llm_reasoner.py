@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import json
 import time
 import requests
@@ -7,15 +8,14 @@ from typing import Dict, Any
 from kafka import KafkaConsumer, KafkaProducer
 from kafka.errors import NoBrokersAvailable, KafkaError
 
-
 BOOTSTRAP = os.getenv("BOOTSTRAP", "localhost:9092")
 IN_TOPIC = os.getenv("IN_TOPIC", "semantic_events")
 OUT_TOPIC = os.getenv("OUT_TOPIC", "reasoning_events")
-GROUP_ID = os.getenv("GROUP_ID", "llm-reasoner-v1")
+GROUP_ID = os.getenv("GROUP_ID", "llm-reasoner")
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434/api/chat")
 MODEL = os.getenv("MODEL", "llama3.1:8b")
-TIMEOUT_SEC = int(os.getenv("TIMEOUT_SEC", "8"))
+TIMEOUT_SEC = int(os.getenv("TIMEOUT_SEC", "10"))
 
 
 def build_consumer_with_retry(*args, retries: int = 60, sleep_sec: float = 2.0, **kwargs) -> KafkaConsumer:
@@ -44,28 +44,29 @@ def build_producer_with_retry(retries: int = 60, sleep_sec: float = 2.0, **kwarg
 
 def build_prompt(semantic_event: Dict[str, Any]) -> tuple[str, str]:
     system = (
-        "You are a risk assessment assistant for system instability monitoring. "
-        "You MUST output ONLY a single valid JSON object, with no markdown, no code fences, "
-        "no extra text. Do NOT fabricate data that is not present in the input. "
-        "If information is missing, use null or a conservative default. "
+        "You are a relapse-risk reasoning assistant for smoking cessation support. "
+        "You assess momentary lapse/relapse risk from recent semantic risk signals. "
+        "You MUST output ONLY a single valid JSON object, with no markdown, no code fences, and no extra text. "
+        "Do NOT fabricate facts not present in the input. If information is missing, use null or a conservative default. "
         "The JSON must contain all required fields exactly as specified."
     )
 
     user = {
         "task": (
-            "Based on recent instability patterns, assess the risk level and recommend "
-            "intervention urgency."
+            "Based on the semantic risk event, estimate current lapse risk, intervention urgency, "
+            "and whether the system should monitor only, deliver a coping message, or suppress intervention temporarily."
         ),
         "input": semantic_event,
         "required_output_json_schema": {
-            "risk_level": "One of: LOW, MEDIUM, HIGH, CRITICAL, UNKNOWN",
-            "urgency": "Integer 0-100 (higher means more urgent)",
+            "risk_level": "One of: LOW, MODERATE, HIGH, VERY_HIGH, UNKNOWN",
+            "urgency": "Integer 0-100",
+            "decision": "One of: MONITOR, INTERVENE, SUPPRESS",
+            "intervention_type": "Short label such as craving_coping, stress_regulation, motivation_support, efficacy_support, none",
             "recommendations": "Array of short actionable sentences",
-            "rationale": "1-3 short paragraphs explaining why",
-            "confidence": "Float 0.0-1.0",
-        },
+            "rationale": "1-3 short paragraphs explaining the reasoning",
+            "confidence": "Float 0.0-1.0"
+        }
     }
-
     return system, json.dumps(user, ensure_ascii=False)
 
 
@@ -107,7 +108,7 @@ def main():
         bootstrap_servers=BOOTSTRAP,
         value_serializer=lambda v: json.dumps(v, ensure_ascii=False).encode("utf-8"),
         key_serializer=lambda k: k.encode("utf-8") if k else None,
-        linger_ms=20,   # allow batching
+        linger_ms=20,
         retries=3,
         acks="all",
     )
@@ -129,37 +130,34 @@ def main():
 
                         system, user = build_prompt(semantic_event)
                         result, llm_ms, err = call_ollama(system, user)
-
                         reasoning_ts_ms = int(time.time() * 1000)
 
                         out = {
                             "run_id": semantic_event.get("run_id"),
                             "user_id": semantic_event.get("user_id"),
-
                             "window_start_ms": semantic_event.get("source_window_start_ms"),
                             "window_end_ms": semantic_event.get("source_window_end_ms"),
-
                             "semantic_type": semantic_event.get("semantic_type"),
                             "severity": semantic_event.get("severity"),
                             "rule_id": semantic_event.get("rule_id"),
-
                             "source_last_sent_at_ms": semantic_event.get("source_last_sent_at_ms"),
                             "source_last_event_ts_ms": semantic_event.get("source_last_event_ts_ms"),
                             "source_ksql_emit_ts_ms": semantic_event.get("source_ksql_emit_ts_ms"),
                             "semantic_engine_ts_ms": semantic_event.get("engine_ts_ms"),
-
                             "reasoning_ts_ms": reasoning_ts_ms,
-
                             "model": MODEL,
-                            "prompt_version": "v1.0",
-                            "schema_version": "v1",
+                            "prompt_version": "v2.0",
+                            "schema_version": "v2",
                             "llm_latency_ms": llm_ms,
+                            "evidence": semantic_event.get("evidence", {}),
                         }
 
                         if err:
                             out.update({
                                 "risk_level": "UNKNOWN",
                                 "urgency": 0,
+                                "decision": "MONITOR",
+                                "intervention_type": "none",
                                 "recommendations": [],
                                 "rationale": "LLM invocation failed. Fallback response generated.",
                                 "confidence": 0.0,
@@ -169,20 +167,21 @@ def main():
                             out.update({
                                 "risk_level": result.get("risk_level", "UNKNOWN"),
                                 "urgency": result.get("urgency", 0),
+                                "decision": result.get("decision", "MONITOR"),
+                                "intervention_type": result.get("intervention_type", "none"),
                                 "recommendations": result.get("recommendations", []),
                                 "rationale": result.get("rationale", ""),
                                 "confidence": result.get("confidence", 0.0),
                                 "error": None,
                             })
 
-                        # Correctness-first: wait for broker ack, then commit input offset
                         fut = producer.send(OUT_TOPIC, key=key, value=out)
                         fut.get(timeout=10)
-
                         consumer.commit()
-
-                        # keep log short
-                        print(f"[llm_reasoner] emitted reasoning_event user_id={out.get('user_id')} risk={out.get('risk_level')} urgency={out.get('urgency')} llm_ms={llm_ms}", flush=True)
+                        print(
+                            f"[llm_reasoner] emitted reasoning_event user_id={out.get('user_id')} risk={out.get('risk_level')} urgency={out.get('urgency')} decision={out.get('decision')} llm_ms={llm_ms}",
+                            flush=True,
+                        )
 
                     except KafkaError as e:
                         print("[llm_reasoner] KAFKA ERROR:", repr(e))
