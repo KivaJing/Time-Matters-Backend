@@ -13,20 +13,30 @@ from state_store import StateStore
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
-def build_semantic_event(event: Dict[str, Any], rule_result: Dict[str, Any]) -> Dict[str, Any]:
+def build_semantic_event(event, rule_result):
     max_rt = event.get("max_rt", 0) or 0
     min_rt = event.get("min_rt", 0) or 0
+    now_ms = int(time.time() * 1000)
 
     return {
         "semantic_event_id": str(uuid.uuid4()),
         "run_id": event.get("run_id"),
         "user_id": event.get("user_id"),
+
         "source_window_start_ms": event.get("window_start_ms"),
         "source_window_end_ms": event.get("window_end_ms"),
+
+        "source_last_sent_at_ms": event.get("last_sent_at_ms"),
+        "source_last_event_ts_ms": event.get("last_event_ts_ms"),
+        "source_ksql_emit_ts_ms": event.get("ksql_emit_ts_ms"),
+        "source_latest_scenario": event.get("latest_scenario"),
+
         "semantic_type": rule_result.get("semantic_type"),
         "severity": rule_result.get("severity"),
         "rule_id": rule_result.get("rule_id"),
-        "engine_ts_ms": int(time.time() * 1000),
+
+        "engine_ts_ms": now_ms,
+
         "explanation": rule_result.get("explanation", ""),
         "evidence": {
             "event_count": event.get("event_count"),

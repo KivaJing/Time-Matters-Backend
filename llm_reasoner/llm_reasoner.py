@@ -130,11 +130,26 @@ def main():
                         system, user = build_prompt(semantic_event)
                         result, llm_ms, err = call_ollama(system, user)
 
+                        reasoning_ts_ms = int(time.time() * 1000)
+
                         out = {
                             "run_id": semantic_event.get("run_id"),
                             "user_id": semantic_event.get("user_id"),
+
                             "window_start_ms": semantic_event.get("source_window_start_ms"),
                             "window_end_ms": semantic_event.get("source_window_end_ms"),
+
+                            "semantic_type": semantic_event.get("semantic_type"),
+                            "severity": semantic_event.get("severity"),
+                            "rule_id": semantic_event.get("rule_id"),
+
+                            "source_last_sent_at_ms": semantic_event.get("source_last_sent_at_ms"),
+                            "source_last_event_ts_ms": semantic_event.get("source_last_event_ts_ms"),
+                            "source_ksql_emit_ts_ms": semantic_event.get("source_ksql_emit_ts_ms"),
+                            "semantic_engine_ts_ms": semantic_event.get("engine_ts_ms"),
+
+                            "reasoning_ts_ms": reasoning_ts_ms,
+
                             "model": MODEL,
                             "prompt_version": "v1.0",
                             "schema_version": "v1",

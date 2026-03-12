@@ -1,6 +1,5 @@
 def evaluate_rules(event, config, state_store):
     span = event["max_rt"] - event["min_rt"]
-
     thresholds = config["thresholds"]
 
     # Rule 1: High Instability

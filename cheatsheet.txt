@@ -74,11 +74,32 @@ NUM_USERS=3 \
 DURATION_SEC=60 \
 python event_generator.py
 
-------------
-python observer/observer.py
-python rule_engine/rule_engine.py
-python llm_reasoner/llm_reasoner.py
+Rule Engine：
+1.
+BOOTSTRAP_SERVERS=localhost:9092 \
+INPUT_TOPIC=complex_events_eval_w5_c50 \
+OUTPUT_TOPIC=semantic_events \
+python rule_engine.py
 
+2.运行observer：
+WARMUP_SEC=5 MEASURE_SEC=60 TOPIC=semantic_events RUN_ID=rule_eval_r1 python rule_observer.py
+
+3.运行simulator：
+RUN_ID=rule_eval_r1 MODE=periodic_trigger NUM_USERS=3 DURATION_SEC=90 python event_generator.py
+
+LLM Engine:
+1.
+IN_TOPIC=semantic_events \
+OUT_TOPIC=reasoning_events \
+GROUP_ID=llm-reasoner-eval \
+BOOTSTRAP_SERVERS=localhost:9092 \
+python llm_reasoner.py
+
+2.运行observer：
+WARMUP_SEC=5 MEASURE_SEC=60 TOPIC=reasoning_events RUN_ID=llm_eval_r1 python llm_observer.py
+
+3.运行simulator：
+RUN_ID=llm_eval_r1 MODE=periodic_trigger NUM_USERS=3 DURATION_SEC=90 python event_generator.py
 ------------------
 
 sudo systemctl enable --now ollama
