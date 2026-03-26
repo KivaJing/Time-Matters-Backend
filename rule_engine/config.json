@@ -3,8 +3,9 @@
     "bootstrap_servers": "kafka:29092",
     "input_topic": "risk_state_windows_new",
     "output_topic": "semantic_events",
-    "group_id": "rule-engine_new"
+    "group_id": "rule-engine"
   },
+
   "thresholds": {
     "craving_high": 7.0,
     "craving_very_high": 8.5,
@@ -16,6 +17,8 @@
     "self_efficacy_very_low": 2.0,
     "combined_high_sum": 14.0
   },
-  "cooldown_sec": 15,
-  "history_window_size": 5
+
+  "rule_engine": {
+    "history_window_size": 5
+  }
 }

@@ -77,6 +77,10 @@ def decide_action(evt: dict) -> dict:
         "action": action,
         "suppression_reason": suppression_reason,
         "message": message,
+        "source_last_sent_at_ms": evt.get("source_last_sent_at_ms"),
+        "source_ksql_emit_ts_ms": evt.get("source_ksql_emit_ts_ms"),
+        "semantic_engine_ts_ms": evt.get("semantic_engine_ts_ms"),
+        "scheduler_ts_ms": evt.get("scheduler_ts_ms"),
     }
 
 

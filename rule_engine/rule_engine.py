@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# rule_engine.py
+
 import json
 import os
 import time
@@ -77,7 +79,10 @@ def build_consumer_with_retry(*args, retries: int = 60, sleep_sec: float = 2.0, 
             return KafkaConsumer(*args, **kwargs)
         except NoBrokersAvailable as e:
             last = e
-            print(f"[rule_engine] Kafka consumer: no broker ({i+1}/{retries}), retry in {sleep_sec}s...")
+            print(
+                f"[rule_engine] Kafka consumer: no broker ({i+1}/{retries}), retry in {sleep_sec}s...",
+                flush=True,
+            )
             time.sleep(sleep_sec)
     raise last
 
@@ -89,7 +94,10 @@ def build_producer_with_retry(retries: int = 60, sleep_sec: float = 2.0, **kwarg
             return KafkaProducer(**kwargs)
         except NoBrokersAvailable as e:
             last = e
-            print(f"[rule_engine] Kafka producer: no broker ({i+1}/{retries}), retry in {sleep_sec}s...")
+            print(
+                f"[rule_engine] Kafka producer: no broker ({i+1}/{retries}), retry in {sleep_sec}s...",
+                flush=True,
+            )
             time.sleep(sleep_sec)
     raise last
 
@@ -161,7 +169,14 @@ def main():
                         ]
                         missing = [f for f in required if event.get(f) is None]
                         if missing:
-                            print("[rule_engine] WARN missing fields:", missing, "raw_key_bytes=", msg.key)
+                            print(
+                                "[rule_engine] WARN missing fields:",
+                                missing,
+                                "raw_key_bytes=",
+                                msg.key,
+                                flush=True,
+                            )
+                            consumer.commit()
                             continue
 
                         if state.is_duplicate(event):
@@ -173,28 +188,54 @@ def main():
                             consumer.commit()
                             continue
 
-                        user_id = event["user_id"]
-                        sem_type = rule_result["semantic_type"]
-                        if state.in_cooldown(user_id, sem_type):
+                        run_id = str(event["run_id"])
+                        user_id = str(event["user_id"])
+                        sem_type = str(rule_result["semantic_type"])
+                        severity = str(rule_result["severity"])
+
+                        # Emit only when dominant semantic state changes.
+                        if not state.should_emit_on_state_change(
+                            run_id=run_id,
+                            user_id=user_id,
+                            semantic_type=sem_type,
+                            severity=severity,
+                        ):
                             consumer.commit()
                             continue
 
                         semantic_event = build_semantic_event(event, rule_result)
                         future = producer.send(out_topic, key=user_id, value=semantic_event)
                         future.get(timeout=10)
-                        state.update_emit_time(user_id, sem_type)
+
+                        state.update_selected_state(
+                            run_id=run_id,
+                            user_id=user_id,
+                            semantic_type=sem_type,
+                            severity=severity,
+                        )
+
                         consumer.commit()
-                        print("[rule_engine] EMIT:", semantic_event, flush=True)
+                        print(
+                            "[rule_engine] EMIT:",
+                            {
+                                "run_id": semantic_event["run_id"],
+                                "user_id": semantic_event["user_id"],
+                                "semantic_type": semantic_event["semantic_type"],
+                                "severity": semantic_event["severity"],
+                                "rule_id": semantic_event["rule_id"],
+                            },
+                            flush=True,
+                        )
 
                     except KafkaError as e:
-                        print("[rule_engine] KAFKA ERROR:", repr(e))
+                        print("[rule_engine] KAFKA ERROR:", repr(e), flush=True)
                         time.sleep(1)
                     except Exception as e:
-                        print("[rule_engine] ERROR processing message:", repr(e))
+                        print("[rule_engine] ERROR processing message:", repr(e), flush=True)
                         time.sleep(0.2)
 
     except KeyboardInterrupt:
-        print("[rule_engine] stopping (KeyboardInterrupt)")
+        print("[rule_engine] stopping (KeyboardInterrupt)", flush=True)
     finally:
         try:
             producer.flush(10)

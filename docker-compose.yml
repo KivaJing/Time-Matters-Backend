@@ -10,6 +10,7 @@ services:
     volumes:
       - zookeeper-data:/var/lib/zookeeper/data
       - zookeeper-log:/var/lib/zookeeper/log
+    restart: unless-stopped
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
@@ -35,6 +36,7 @@ services:
       retries: 10
     volumes:
       - kafka-data:/var/lib/kafka/data
+    restart: unless-stopped
 
   ksqldb:
     image: confluentinc/cp-ksqldb-server:7.5.9
@@ -53,9 +55,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
 
   ksql_deployer:
     build: .
+    working_dir: /app
     depends_on:
       ksqldb:
         condition: service_healthy
@@ -64,43 +68,144 @@ services:
       - .:/app
     restart: "no"
 
+  ollama:
+    image: ollama/ollama:latest
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+    volumes:
+      - ollama-data:/root/.ollama
+    ports:
+      - "11434:11434"
+    runtime: nvidia
+    restart: unless-stopped
+
   rule_engine:
     build: .
+    working_dir: /app
     depends_on:
       kafka:
         condition: service_healthy
-      ksql_deployer:
-        condition: service_completed_successfully
     command: python rule_engine/rule_engine.py
     volumes:
       - .:/app
     environment:
       BOOTSTRAP_SERVERS: kafka:29092
+      INPUT_TOPIC: risk_state_windows_new
+      OUTPUT_TOPIC: semantic_events
+      GROUP_ID: rule-engine
+      
+      PYTHONUNBUFFERED: "1"
+    restart: unless-stopped
+
+  reasoning_scheduler:
+    build: .
+    working_dir: /app
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command: python llm_reasoner/reasoning_scheduler.py
+    volumes:
+      - .:/app
+    environment:
+      BOOTSTRAP: kafka:29092
+      IN_TOPIC: semantic_events
+      OUT_REQUEST_TOPIC: reasoning_requests
+      OUT_REASONING_TOPIC: reasoning_events
+      OUT_DROPPED_TOPIC: reasoning_dropped_events
+      OUT_FAST_REQUEST_TOPIC: fast_reasoning_requests
+      GROUP_ID: reasoning-scheduler
+
+      COALESCE_SEC: 0.5
+      MAX_PENDING: 256
+      MAX_PENDING_PER_USER: 2
+      USER_COOLDOWN_SEC: 10
+      ENABLE_USER_COOLDOWN: "true"
+
+      ENABLE_PRIORITY_FILTER: "true"
+      DROP_MEDIUM_WHEN_PENDING_GE: 16
+      DROP_LOW_ALWAYS: "true"
+      MAX_LLM_REQUESTS_PER_SEC: "2"
+      MAX_FAST_LLM_REQUESTS_PER_SEC: "1"
+      ENABLE_DROPPED_TOPIC: "false"
+      SCHEDULER_VERSION: "v2"
+
       PYTHONUNBUFFERED: "1"
     restart: unless-stopped
 
   llm_reasoner:
     build: .
+    working_dir: /app
     depends_on:
       kafka:
         condition: service_healthy
+      ollama:
+        condition: service_started
     command: python llm_reasoner/llm_reasoner.py
     volumes:
       - .:/app
     environment:
       BOOTSTRAP: kafka:29092
-      OLLAMA_URL: http://host.docker.internal:11434/api/chat
+      IN_TOPIC: reasoning_requests
+      OUT_TOPIC: reasoning_events
+      GROUP_ID: llm-reasoner-v2
+
+      OLLAMA_URL: http://ollama:11434/api/chat
+      OLLAMA_TAGS_URL: http://ollama:11434/api/tags
+      MODEL: llama3.1:8b
+
+      TIMEOUT_SEC: 60
+      CONNECT_TIMEOUT_SEC: 5
+      READ_TIMEOUT_SEC: 60
+      OLLAMA_WAIT_RETRIES: 30
+      OLLAMA_WAIT_SEC: 2
+
+      MAX_WORKERS: 2
+      MAX_INFLIGHT: 4
+      MAX_REQUEST_AGE_MS: "15000"
+
+      PROMPT_VERSION: "v4-compacted-latest"
+      SCHEMA_VERSION: "v2"
+
       PYTHONUNBUFFERED: "1"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  fast_llm_reasoner:
+    build: .
+    working_dir: /app
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command: python llm_reasoner/fast_llm_reasoner.py
+    volumes:
+      - .:/app
+    environment:
+      BOOTSTRAP: kafka:29092
+      IN_TOPIC: fast_reasoning_requests
+      OUT_TOPIC: reasoning_events
+      GROUP_ID: fast-llm-reasoner
+      OLLAMA_URL: http://ollama:11434/api/chat
+      OLLAMA_TAGS_URL: http://ollama:11434/api/tags
+      MODEL: llama3.2:3b
+      TIMEOUT_SEC: "6"
+      CONNECT_TIMEOUT_SEC: "1"
+      READ_TIMEOUT_SEC: "6"
+      MAX_WORKERS: "1"
+      MAX_INFLIGHT: "4"
+      MAX_REQUEST_AGE_MS: "2000"
+      OLLAMA_NUM_PREDICT: "40"
+      OLLAMA_NUM_CTX: "512"
+      OLLAMA_TEMPERATURE: "0.0"
+      OLLAMA_KEEP_ALIVE: "10m"
+      PYTHONUNBUFFERED: "1"
     restart: unless-stopped
 
   intervention_engine:
     build: .
+    working_dir: /app
     depends_on:
       kafka:
         condition: service_healthy
-    command: python intervention_engine/intervention_engine.py
+    command: python intervention/intervention_engine.py
     volumes:
       - .:/app
     environment:
@@ -112,3 +217,4 @@ volumes:
   kafka-data:
   zookeeper-data:
   zookeeper-log:
+  ollama-data:
