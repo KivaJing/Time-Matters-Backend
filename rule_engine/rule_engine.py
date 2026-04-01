@@ -5,7 +5,7 @@ import json
 import os
 import time
 import uuid
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from kafka import KafkaConsumer, KafkaProducer
 from kafka.errors import NoBrokersAvailable, KafkaError
@@ -114,7 +114,7 @@ def main():
     bootstrap = os.getenv("BOOTSTRAP_SERVERS", kcfg.get("bootstrap_servers", "localhost:9092"))
     in_topic = os.getenv("INPUT_TOPIC", kcfg.get("input_topic", "risk_state_windows_new"))
     out_topic = os.getenv("OUTPUT_TOPIC", kcfg.get("output_topic", "semantic_events"))
-    group_id = os.getenv("GROUP_ID", kcfg.get("group_id", "rule-engine_new"))
+    group_id = os.getenv("GROUP_ID", kcfg.get("group_id", "rule-engine"))
     emit_same_state_after_sec = float(
         os.getenv(
             "EMIT_SAME_STATE_AFTER_SEC",
@@ -125,13 +125,13 @@ def main():
     consumer = build_consumer_with_retry(
         in_topic,
         bootstrap_servers=bootstrap,
-        auto_offset_reset="earliest",
+        auto_offset_reset="latest",   # changed
         enable_auto_commit=False,
         group_id=group_id,
         key_deserializer=lambda m: m,
         value_deserializer=lambda m: json.loads(m.decode("utf-8")) if m else None,
         consumer_timeout_ms=0,
-        max_poll_records=200,
+        max_poll_records=500,         # changed
     )
 
     producer = build_producer_with_retry(
@@ -154,13 +154,16 @@ def main():
 
     try:
         while True:
-            records = consumer.poll(timeout_ms=1000, max_records=200)
+            records = consumer.poll(timeout_ms=500, max_records=500)
             if not records:
                 continue
 
-            for tp, msgs in records.items():
-                for msg in msgs:
-                    try:
+            sent_futures: List[Any] = []
+            processed_count = 0
+
+            try:
+                for tp, msgs in records.items():
+                    for msg in msgs:
                         k = lower_keys(parse_key_json_bytes(msg.key))
                         v = lower_keys(msg.value or {})
                         event = {**v, **k}
@@ -180,23 +183,15 @@ def main():
                         ]
                         missing = [f for f in required if event.get(f) is None]
                         if missing:
-                            print(
-                                "[rule_engine] WARN missing fields:",
-                                missing,
-                                "raw_key_bytes=",
-                                msg.key,
-                                flush=True,
-                            )
-                            consumer.commit()
                             continue
 
                         if state.is_duplicate(event):
-                            consumer.commit()
+                            processed_count += 1
                             continue
 
                         rule_result = evaluate_rules(event, config, state)
                         if not rule_result:
-                            consumer.commit()
+                            processed_count += 1
                             continue
 
                         run_id = str(event["run_id"])
@@ -211,44 +206,31 @@ def main():
                             severity=severity,
                             max_same_state_silence_sec=emit_same_state_after_sec,
                         ):
-                            consumer.commit()
+                            processed_count += 1
                             continue
 
                         semantic_event = build_semantic_event(event, rule_result)
+                        fut = producer.send(out_topic, key=user_id, value=semantic_event)
+                        sent_futures.append((fut, run_id, user_id, sem_type, severity, semantic_event))
+                        processed_count += 1
 
-                        future = producer.send(out_topic, key=user_id, value=semantic_event)
-                        future.get(timeout=10)
+                for fut, run_id, user_id, sem_type, severity, semantic_event in sent_futures:
+                    fut.get(timeout=10)
+                    state.update_selected_state(
+                        run_id=run_id,
+                        user_id=user_id,
+                        semantic_type=sem_type,
+                        severity=severity,
+                    )
 
-                        # only update state AFTER successful send
-                        state.update_selected_state(
-                            run_id=run_id,
-                            user_id=user_id,
-                            semantic_type=sem_type,
-                            severity=severity,
-                        )
+                consumer.commit()
 
-                        consumer.commit()
-
-                        print(
-                            "[rule_engine] EMIT:",
-                            {
-                                "run_id": semantic_event["run_id"],
-                                "user_id": semantic_event["user_id"],
-                                "semantic_type": semantic_event["semantic_type"],
-                                "severity": semantic_event["severity"],
-                                "rule_id": semantic_event["rule_id"],
-                                "routing_hint": semantic_event["routing_hint"],
-                                "fast_llm_candidate": semantic_event["fast_llm_candidate"],
-                            },
-                            flush=True,
-                        )
-
-                    except KafkaError as e:
-                        print("[rule_engine] KAFKA ERROR:", repr(e), flush=True)
-                        time.sleep(1)
-                    except Exception as e:
-                        print("[rule_engine] ERROR processing message:", repr(e), flush=True)
-                        time.sleep(0.2)
+            except KafkaError as e:
+                print("[rule_engine] KAFKA ERROR:", repr(e), flush=True)
+                time.sleep(1)
+            except Exception as e:
+                print("[rule_engine] ERROR processing batch:", repr(e), flush=True)
+                time.sleep(0.2)
 
     except KeyboardInterrupt:
         print("[rule_engine] stopping (KeyboardInterrupt)", flush=True)

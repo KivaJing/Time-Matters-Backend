@@ -103,7 +103,7 @@ services:
       BOOTSTRAP_SERVERS: kafka:29092
       INPUT_TOPIC: risk_state_windows_new
       OUTPUT_TOPIC: semantic_events
-      GROUP_ID: rule-engine
+      GROUP_ID: rule-engine-v2
       EMIT_SAME_STATE_AFTER_SEC: "30"
       PYTHONUNBUFFERED: "1"
     restart: unless-stopped
@@ -124,8 +124,8 @@ services:
       OUT_REASONING_TOPIC: reasoning_events
       OUT_DROPPED_TOPIC: reasoning_dropped_events
       OUT_FAST_REQUEST_TOPIC: fast_reasoning_requests
-      GROUP_ID: reasoning-scheduler
-
+      GROUP_ID: reasoning-scheduler-v2
+      
       COALESCE_SEC: 0.2
       MAX_PENDING: 256
       MAX_PENDING_PER_USER: 3
