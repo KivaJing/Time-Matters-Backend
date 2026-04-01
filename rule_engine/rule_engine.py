@@ -33,6 +33,9 @@ def build_semantic_event(event: Dict[str, Any], rule_result: Dict[str, Any]) -> 
         "rule_id": rule_result.get("rule_id"),
         "engine_ts_ms": now_ms,
         "explanation": rule_result.get("explanation", ""),
+        "routing_hint": rule_result.get("routing_hint", "rule_based"),
+        "fast_llm_candidate": bool(rule_result.get("fast_llm_candidate", False)),
+        "all_candidates": rule_result.get("all_candidates", []),
         "evidence": {
             "event_count": event.get("event_count"),
             "craving_avg": event.get("craving_avg"),
@@ -112,6 +115,12 @@ def main():
     in_topic = os.getenv("INPUT_TOPIC", kcfg.get("input_topic", "risk_state_windows_new"))
     out_topic = os.getenv("OUTPUT_TOPIC", kcfg.get("output_topic", "semantic_events"))
     group_id = os.getenv("GROUP_ID", kcfg.get("group_id", "rule-engine_new"))
+    emit_same_state_after_sec = float(
+        os.getenv(
+            "EMIT_SAME_STATE_AFTER_SEC",
+            config.get("rule_engine", {}).get("emit_same_state_after_sec", 30.0),
+        )
+    )
 
     consumer = build_consumer_with_retry(
         in_topic,
@@ -122,6 +131,7 @@ def main():
         key_deserializer=lambda m: m,
         value_deserializer=lambda m: json.loads(m.decode("utf-8")) if m else None,
         consumer_timeout_ms=0,
+        max_poll_records=200,
     )
 
     producer = build_producer_with_retry(
@@ -137,7 +147,8 @@ def main():
 
     print(
         "[rule_engine] started"
-        f" bootstrap={bootstrap} consuming={in_topic} producing={out_topic} group_id={group_id}",
+        f" bootstrap={bootstrap} consuming={in_topic} producing={out_topic} group_id={group_id}"
+        f" emit_same_state_after_sec={emit_same_state_after_sec}",
         flush=True,
     )
 
@@ -193,20 +204,22 @@ def main():
                         sem_type = str(rule_result["semantic_type"])
                         severity = str(rule_result["severity"])
 
-                        # Emit only when dominant semantic state changes.
                         if not state.should_emit_on_state_change(
                             run_id=run_id,
                             user_id=user_id,
                             semantic_type=sem_type,
                             severity=severity,
+                            max_same_state_silence_sec=emit_same_state_after_sec,
                         ):
                             consumer.commit()
                             continue
 
                         semantic_event = build_semantic_event(event, rule_result)
+
                         future = producer.send(out_topic, key=user_id, value=semantic_event)
                         future.get(timeout=10)
 
+                        # only update state AFTER successful send
                         state.update_selected_state(
                             run_id=run_id,
                             user_id=user_id,
@@ -215,6 +228,7 @@ def main():
                         )
 
                         consumer.commit()
+
                         print(
                             "[rule_engine] EMIT:",
                             {
@@ -223,6 +237,8 @@ def main():
                                 "semantic_type": semantic_event["semantic_type"],
                                 "severity": semantic_event["severity"],
                                 "rule_id": semantic_event["rule_id"],
+                                "routing_hint": semantic_event["routing_hint"],
+                                "fast_llm_candidate": semantic_event["fast_llm_candidate"],
                             },
                             flush=True,
                         )

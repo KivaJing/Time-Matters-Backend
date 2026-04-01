@@ -52,7 +52,7 @@ Observer:
 cd observer 
 RUN_ID=exp_scaling_100c  WARMUP_SEC=10 MEASURE_SEC=200 python3 cep_observer.py
 RUN_ID=exp_scaling_100c WARMUP_SEC=10 MEASURE_SEC=200 python3 rule_observer.py
-RUN_ID=exp_scaling_100c WARMUP_SEC=10 MEASURE_SEC=200 python3 intervention_observer.py
+RUN_ID=exp_scaling_100c WARMUP_SEC=10 MEASURE_SEC=200 python3 llm_observer.py
 RUN_ID=exp_scaling_100c WARMUP_SEC=10 MEASURE_SEC=200 python3 reasoning_requests_observer.py
 RUN_ID=exp_scaling_100c WARMUP_SEC=10 MEASURE_SEC=200 python3 fast_llm_reasoner_observer.py
 RUN_ID=exp_scaling_100c WARMUP_SEC=10 MEASURE_SEC=200 python3 intervention_observer.py

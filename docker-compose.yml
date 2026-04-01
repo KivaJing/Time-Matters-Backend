@@ -68,14 +68,25 @@ services:
       - .:/app
     restart: "no"
 
-  ollama:
+  ollama_full:
     image: ollama/ollama:latest
     environment:
       OLLAMA_HOST: 0.0.0.0:11434
     volumes:
-      - ollama-data:/root/.ollama
+      - ollama-full-data:/root/.ollama
     ports:
       - "11434:11434"
+    runtime: nvidia
+    restart: unless-stopped
+
+  ollama_fast:
+    image: ollama/ollama:latest
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+    volumes:
+      - ollama-fast-data:/root/.ollama
+    ports:
+      - "11435:11434"
     runtime: nvidia
     restart: unless-stopped
 
@@ -93,7 +104,7 @@ services:
       INPUT_TOPIC: risk_state_windows_new
       OUTPUT_TOPIC: semantic_events
       GROUP_ID: rule-engine
-      
+      EMIT_SAME_STATE_AFTER_SEC: "30"
       PYTHONUNBUFFERED: "1"
     restart: unless-stopped
 
@@ -115,19 +126,19 @@ services:
       OUT_FAST_REQUEST_TOPIC: fast_reasoning_requests
       GROUP_ID: reasoning-scheduler
 
-      COALESCE_SEC: 0.5
+      COALESCE_SEC: 0.2
       MAX_PENDING: 256
-      MAX_PENDING_PER_USER: 2
-      USER_COOLDOWN_SEC: 10
+      MAX_PENDING_PER_USER: 3
+      USER_COOLDOWN_SEC: 2
       ENABLE_USER_COOLDOWN: "true"
 
       ENABLE_PRIORITY_FILTER: "true"
-      DROP_MEDIUM_WHEN_PENDING_GE: 16
+      DROP_MEDIUM_WHEN_PENDING_GE: 64
       DROP_LOW_ALWAYS: "true"
-      MAX_LLM_REQUESTS_PER_SEC: "2"
-      MAX_FAST_LLM_REQUESTS_PER_SEC: "1"
-      ENABLE_DROPPED_TOPIC: "false"
-      SCHEDULER_VERSION: "v2"
+      MAX_LLM_REQUESTS_PER_SEC: "3"
+      MAX_FAST_LLM_REQUESTS_PER_SEC: "3"
+      ENABLE_DROPPED_TOPIC: "true"
+      SCHEDULER_VERSION: "v3"
 
       PYTHONUNBUFFERED: "1"
     restart: unless-stopped
@@ -138,7 +149,7 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
-      ollama:
+      ollama_full:
         condition: service_started
     command: python llm_reasoner/llm_reasoner.py
     volumes:
@@ -149,9 +160,9 @@ services:
       OUT_TOPIC: reasoning_events
       GROUP_ID: llm-reasoner-v2
 
-      OLLAMA_URL: http://ollama:11434/api/chat
-      OLLAMA_TAGS_URL: http://ollama:11434/api/tags
-      MODEL: llama3.1:8b
+      OLLAMA_URL: http://ollama_full:11434/api/chat
+      OLLAMA_TAGS_URL: http://ollama_full:11434/api/tags
+      MODEL: llama3.2:3b
 
       TIMEOUT_SEC: 60
       CONNECT_TIMEOUT_SEC: 5
@@ -159,12 +170,12 @@ services:
       OLLAMA_WAIT_RETRIES: 30
       OLLAMA_WAIT_SEC: 2
 
-      MAX_WORKERS: 2
-      MAX_INFLIGHT: 4
+      MAX_WORKERS: 4
+      MAX_INFLIGHT: 8
       MAX_REQUEST_AGE_MS: "15000"
 
-      PROMPT_VERSION: "v4-compacted-latest"
-      SCHEMA_VERSION: "v2"
+      PROMPT_VERSION: "v5-compact-decision-only"
+      SCHEMA_VERSION: "v3"
 
       PYTHONUNBUFFERED: "1"
     restart: unless-stopped
@@ -183,17 +194,17 @@ services:
       IN_TOPIC: fast_reasoning_requests
       OUT_TOPIC: reasoning_events
       GROUP_ID: fast-llm-reasoner
-      OLLAMA_URL: http://ollama:11434/api/chat
-      OLLAMA_TAGS_URL: http://ollama:11434/api/tags
-      MODEL: llama3.2:3b
+      OLLAMA_URL: http://ollama_fast:11434/api/generate
+      OLLAMA_TAGS_URL: http://ollama_fast:11434/api/tags
+      MODEL: granite3-moe:1b
       TIMEOUT_SEC: "6"
       CONNECT_TIMEOUT_SEC: "1"
       READ_TIMEOUT_SEC: "6"
-      MAX_WORKERS: "1"
-      MAX_INFLIGHT: "4"
-      MAX_REQUEST_AGE_MS: "2000"
-      OLLAMA_NUM_PREDICT: "40"
-      OLLAMA_NUM_CTX: "512"
+      MAX_WORKERS: "2"
+      MAX_INFLIGHT: "2"
+      MAX_REQUEST_AGE_MS: "4000"
+      OLLAMA_NUM_PREDICT: "12"
+      OLLAMA_NUM_CTX: "128"
       OLLAMA_TEMPERATURE: "0.0"
       OLLAMA_KEEP_ALIVE: "10m"
       PYTHONUNBUFFERED: "1"
@@ -217,4 +228,5 @@ volumes:
   kafka-data:
   zookeeper-data:
   zookeeper-log:
-  ollama-data:
+  ollama-full-data:
+  ollama-fast-data:

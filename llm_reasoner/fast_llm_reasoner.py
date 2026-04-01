@@ -20,9 +20,9 @@ IN_TOPIC = os.getenv("IN_TOPIC", "fast_reasoning_requests")
 OUT_TOPIC = os.getenv("OUT_TOPIC", "reasoning_events")
 GROUP_ID = os.getenv("GROUP_ID", "fast-llm-reasoner")
 
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434/api/chat")
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434/api/generate")
 OLLAMA_TAGS_URL = os.getenv("OLLAMA_TAGS_URL", "http://ollama:11434/api/tags")
-MODEL = os.getenv("MODEL", "llama3.2:3b")
+MODEL = os.getenv("MODEL", "granite3-moe:1b")
 
 TIMEOUT_SEC = int(os.getenv("TIMEOUT_SEC", "6"))
 CONNECT_TIMEOUT_SEC = float(os.getenv("CONNECT_TIMEOUT_SEC", "1"))
@@ -31,16 +31,16 @@ READ_TIMEOUT_SEC = float(os.getenv("READ_TIMEOUT_SEC", str(TIMEOUT_SEC)))
 OLLAMA_WAIT_RETRIES = int(os.getenv("OLLAMA_WAIT_RETRIES", "30"))
 OLLAMA_WAIT_SEC = float(os.getenv("OLLAMA_WAIT_SEC", "2"))
 
-MAX_WORKERS = int(os.getenv("MAX_WORKERS", "2"))
-MAX_INFLIGHT = int(os.getenv("MAX_INFLIGHT", "8"))
+MAX_WORKERS = int(os.getenv("MAX_WORKERS", "1"))
+MAX_INFLIGHT = int(os.getenv("MAX_INFLIGHT", "1"))
 
 MAX_REQUEST_AGE_MS = int(os.getenv("MAX_REQUEST_AGE_MS", "2000"))
 
 PROMPT_VERSION = os.getenv("PROMPT_VERSION", "fast-v1-minimal")
 SCHEMA_VERSION = os.getenv("SCHEMA_VERSION", "v2")
 
-OLLAMA_NUM_PREDICT = int(os.getenv("OLLAMA_NUM_PREDICT", "40"))
-OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "512"))
+OLLAMA_NUM_PREDICT = int(os.getenv("OLLAMA_NUM_PREDICT", "12"))
+OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "128"))
 OLLAMA_TEMPERATURE = float(os.getenv("OLLAMA_TEMPERATURE", "0.0"))
 OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "10m")
 
@@ -105,42 +105,20 @@ def wait_for_ollama() -> None:
             time.sleep(OLLAMA_WAIT_SEC)
     raise RuntimeError(f"Ollama not ready after retries: {repr(last_err)}")
 
+def build_prompt(request_event: Dict[str, Any]) -> str:
+    semantic_type = request_event.get("semantic_type", "")
+    severity = request_event.get("severity", "")
+    evidence = request_event.get("evidence", {})
 
-def build_prompt(request_event: Dict[str, Any]) -> Tuple[str, str]:
-    """
-    Minimal prompt for the fast path.
-    Keep only the fields needed for a short, constrained decision.
-    """
-    system = (
-        "Return exactly one valid JSON object and nothing else. "
-        "You are a fast smoking relapse-support assistant. "
-        "Be concise, conservative, and use only the provided input."
+    craving = evidence.get("craving_score")
+    stress = evidence.get("stress_score")
+    neg = evidence.get("negative_affect_score")
+    lapse = evidence.get("recent_lapse")
+
+    return (
+        'JSON only: {"risk_level":"LOW|HIGH|UNKNOWN","decision":"MONITOR|INTERVENE","urgency":0,"intervention_type":"none"}\n'
+        f"type={semantic_type};sev={severity};cr={craving};st={stress};na={neg};lp={lapse}"
     )
-
-    compact_input = {
-        "semantic_type": request_event.get("semantic_type"),
-        "severity": request_event.get("severity"),
-        "rule_id": request_event.get("rule_id"),
-        "evidence": request_event.get("evidence", {}),
-    }
-
-    user = {
-        "task": (
-            "Estimate immediate intervention need for this event. "
-            "Output only a short intervention decision."
-        ),
-        "input": compact_input,
-        "required_output_json_schema": {
-            "risk_level": "LOW|HIGH|UNKNOWN",
-            "urgency": "integer 0-100",
-            "decision": "MONITOR|INTERVENE",
-            "intervention_type": "short label",
-            "recommendation": "short sentence or empty string",
-        },
-    }
-
-    return system, json.dumps(user, ensure_ascii=False, separators=(",", ":"))
-
 
 def extract_json_object(text: str) -> Dict[str, Any]:
     text = text.strip()
@@ -168,23 +146,20 @@ def extract_json_object(text: str) -> Dict[str, Any]:
     raise ValueError("No valid JSON object found in LLM response")
 
 
-def call_ollama(system: str, user: str) -> Tuple[Dict[str, Any], int, str | None]:
+def call_ollama(prompt: str) -> Tuple[Dict[str, Any], int, str | None]:
     t0 = time.time()
     try:
         payload = {
             "model": MODEL,
+            "prompt": prompt,
             "stream": False,
             "format": "json",
             "keep_alive": OLLAMA_KEEP_ALIVE,
             "options": {
-                "temperature": OLLAMA_TEMPERATURE,
+                "temperature": 0,
                 "num_predict": OLLAMA_NUM_PREDICT,
                 "num_ctx": OLLAMA_NUM_CTX,
             },
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
         }
 
         r = SESSION.post(
@@ -195,7 +170,7 @@ def call_ollama(system: str, user: str) -> Tuple[Dict[str, Any], int, str | None
         r.raise_for_status()
 
         data = r.json()
-        text = data["message"]["content"].strip()
+        text = data["response"].strip()
         parsed = extract_json_object(text)
 
         llm_ms = int((time.time() - t0) * 1000)
@@ -205,23 +180,14 @@ def call_ollama(system: str, user: str) -> Tuple[Dict[str, Any], int, str | None
         llm_ms = int((time.time() - t0) * 1000)
         return {}, llm_ms, repr(e)
 
-
 def normalize_result(result: Dict[str, Any]) -> Dict[str, Any]:
     risk_level = str(result.get("risk_level", "UNKNOWN")).upper()
-    if risk_level not in {"LOW", "MODERATE", "HIGH", "VERY_HIGH", "UNKNOWN"}:
+    if risk_level not in {"LOW", "HIGH", "UNKNOWN"}:
         risk_level = "UNKNOWN"
 
     decision = str(result.get("decision", "MONITOR")).upper()
-    if decision not in {"MONITOR", "INTERVENE", "SUPPRESS"}:
+    if decision not in {"MONITOR", "INTERVENE"}:
         decision = "MONITOR"
-
-    intervention_type = str(result.get("intervention_type", "none") or "none").strip()[:64]
-
-    recommendations = result.get("recommendations", [])
-    if not isinstance(recommendations, list):
-        recommendations = [str(recommendations)]
-    recommendations = [str(x).strip() for x in recommendations if str(x).strip()]
-    recommendations = recommendations[:1]
 
     try:
         urgency = int(result.get("urgency", 0))
@@ -229,20 +195,23 @@ def normalize_result(result: Dict[str, Any]) -> Dict[str, Any]:
         urgency = 0
     urgency = max(0, min(100, urgency))
 
-    # Fast path defaults if missing
-    rationale = ""
-    confidence = 0.5
+    intervention_type = str(result.get("intervention_type", "none") or "none").strip()[:32]
+
+    if risk_level == "UNKNOWN":
+        if decision == "INTERVENE" or urgency >= 70:
+            risk_level = "HIGH"
+        else:
+            risk_level = "LOW"
 
     return {
         "risk_level": risk_level,
         "urgency": urgency,
         "decision": decision,
         "intervention_type": intervention_type,
-        "recommendations": recommendations,
-        "rationale": rationale,
-        "confidence": confidence,
+        "recommendations": [],
+        "rationale": "",
+        "confidence": 0.5,
     }
-
 
 def build_output_base(request_event: Dict[str, Any], llm_ms: int) -> Dict[str, Any]:
     return {
@@ -304,8 +273,8 @@ def build_output_from_request_event(
 
 
 def process_request_event(request_event: Dict[str, Any]) -> Tuple[Dict[str, Any], str]:
-    system, user = build_prompt(request_event)
-    result, llm_ms, err = call_ollama(system, user)
+    prompt = build_prompt(request_event)
+    result, llm_ms, err = call_ollama(prompt)
 
     if err:
         print(

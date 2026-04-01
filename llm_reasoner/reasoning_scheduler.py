@@ -130,13 +130,13 @@ class CommitTracker:
             )
 
 
-def make_coalesce_key(semantic_event: Dict[str, Any]) -> Tuple[str, str, str]:
+def make_coalesce_key(semantic_event: Dict[str, Any]) -> Tuple[str, str, str, str]:
     return (
         str(semantic_event.get("run_id")),
         str(semantic_event.get("user_id")),
         str(semantic_event.get("semantic_type")),
+        str(semantic_event.get("severity")),
     )
-
 
 def pending_count_for_user(
     pending_coalesce: Dict[Tuple[str, str, str], Dict[str, Any]],
@@ -315,20 +315,52 @@ def should_drop_by_priority(
 
 
 def route_event(evt: dict) -> str:
+    routing_hint = str(evt.get("routing_hint") or "").strip().lower()
     semantic_type = str(evt.get("semantic_type") or "")
     severity = str(evt.get("severity") or "").upper()
+    fast_llm_candidate = bool(evt.get("fast_llm_candidate", False))
+    all_candidates = evt.get("all_candidates") or []
 
+    candidate_types = {
+        str(c.get("semantic_type"))
+        for c in all_candidates
+        if isinstance(c, dict) and c.get("semantic_type") is not None
+    }
+
+    # 1) Trust explicit upstream routing hint first
+    if routing_hint in {"llm", "fast_llm", "rule_based"}:
+        return routing_hint
+
+    # 2) Strong safety rule for very high combined risk
     if semantic_type == "COMBINED_RELAPSE_RISK" or severity == "VERY_HIGH":
         return "llm"
 
+    # 3) Stable direct rule-based path for trajectory events
     if semantic_type in {"RISING_STRESS_TRAJECTORY", "RISING_CRAVING_TRAJECTORY"}:
         return "rule_based"
 
-    if severity == "HIGH" or semantic_type in {"ELEVATED_STRESS", "ELEVATED_CRAVING", "LOW_MOTIVATION"}:
-        return "fast_llm"
+    # 4) Fast LLM path for medium-risk or explicitly marked candidates
+    fast_candidate_types = {
+        "ELEVATED_STRESS",
+        "ELEVATED_CRAVING",
+        "LOW_MOTIVATION",
+        "LOW_SELF_EFFICACY",
+    }
 
+    if fast_llm_candidate:
+        if severity in {"MEDIUM", "HIGH"}:
+            return "fast_llm"
+
+    if candidate_types & fast_candidate_types:
+        if severity in {"MEDIUM", "HIGH"}:
+            return "fast_llm"
+
+    if semantic_type in fast_candidate_types:
+        if severity in {"MEDIUM", "HIGH"}:
+            return "fast_llm"
+
+    # 5) Conservative fallback
     return "drop"
-
 
 def emit_reasoning_event(
     producer: KafkaProducer,

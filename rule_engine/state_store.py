@@ -1,5 +1,3 @@
-# state_store.py
-
 import time
 from collections import deque
 from typing import Dict, Tuple, Optional, List
@@ -23,6 +21,14 @@ class StateStore:
         )
         if self.history_window_size is None or self.history_window_size <= 0:
             self.history_window_size = 5
+
+        self.emit_same_state_after_sec = (
+            config.get("rule_engine", {}).get("emit_same_state_after_sec", 30.0)
+            if isinstance(config, dict)
+            else 30.0
+        )
+        if self.emit_same_state_after_sec is None or self.emit_same_state_after_sec < 0:
+            self.emit_same_state_after_sec = 30.0
 
     def is_duplicate(self, event: dict) -> bool:
         run_id = event.get("run_id")
@@ -98,18 +104,34 @@ class StateStore:
         user_id: str,
         semantic_type: str,
         severity: str,
+        max_same_state_silence_sec: Optional[float] = None,
     ) -> bool:
         """
         Emit when:
         1. no previous dominant state exists
         2. semantic_type changed
         3. severity changed
+        4. same state persists beyond TTL and should be re-emitted
         """
         if not run_id or not user_id or not semantic_type or not severity:
             return False
+
+        ttl = self.emit_same_state_after_sec if max_same_state_silence_sec is None else max_same_state_silence_sec
+        if ttl is None or ttl < 0:
+            ttl = 30.0
 
         key = (run_id, user_id)
         current = (semantic_type, severity)
         previous = self.last_selected_state.get(key)
 
-        return previous is None or current != previous
+        if previous is None:
+            return True
+
+        if current != previous:
+            return True
+
+        last_time = self.last_selected_time.get(key)
+        if last_time is None:
+            return True
+
+        return (time.time() - last_time) >= ttl

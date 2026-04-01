@@ -1,5 +1,3 @@
-# rules.py
-
 from typing import Dict, Any, List, Optional
 
 RULE_PRIORITY = {
@@ -41,6 +39,39 @@ def _sort_key(item: Dict[str, Any]):
         RULE_PRIORITY.get(item["semantic_type"], 0),
         SEVERITY_RANK.get(item["severity"], 0),
     )
+
+
+def _build_all_candidates(candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [
+        {
+            "semantic_type": c["semantic_type"],
+            "severity": c["severity"],
+            "rule_id": c["rule_id"],
+        }
+        for c in candidates
+    ]
+
+
+def _pick_routing_hint(
+    dominant: Dict[str, Any],
+    candidates: List[Dict[str, Any]],
+) -> str:
+    dominant_type = dominant["semantic_type"]
+    dominant_severity = dominant["severity"]
+
+    if dominant_type == "COMBINED_RELAPSE_RISK" and dominant_severity in {"HIGH", "VERY_HIGH"}:
+        return "llm"
+
+    fast_types = {
+        "ELEVATED_CRAVING",
+        "ELEVATED_STRESS",
+        "LOW_MOTIVATION",
+        "LOW_SELF_EFFICACY",
+    }
+    if any(c["semantic_type"] in fast_types for c in candidates):
+        return "fast_llm"
+
+    return "rule_based"
 
 
 def evaluate_rules(event: Dict[str, Any], config: Dict[str, Any], state_store) -> Optional[Dict[str, Any]]:
@@ -175,4 +206,21 @@ def evaluate_rules(event: Dict[str, Any], config: Dict[str, Any], state_store) -
         return None
 
     candidates.sort(key=_sort_key, reverse=True)
-    return candidates[0]
+    dominant = dict(candidates[0])
+
+    all_candidates = _build_all_candidates(candidates)
+    fast_llm_candidate = any(
+        c["semantic_type"] in {
+            "ELEVATED_CRAVING",
+            "ELEVATED_STRESS",
+            "LOW_MOTIVATION",
+            "LOW_SELF_EFFICACY",
+        }
+        for c in candidates
+    )
+
+    dominant["all_candidates"] = all_candidates
+    dominant["fast_llm_candidate"] = fast_llm_candidate
+    dominant["routing_hint"] = _pick_routing_hint(dominant, candidates)
+
+    return dominant

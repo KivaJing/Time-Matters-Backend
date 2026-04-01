@@ -22,7 +22,7 @@ GROUP_ID = os.getenv("GROUP_ID", "llm-reasoner")
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434/api/chat")
 OLLAMA_TAGS_URL = os.getenv("OLLAMA_TAGS_URL", "http://ollama:11434/api/tags")
-MODEL = os.getenv("MODEL", "llama3.1:8b")
+MODEL = os.getenv("MODEL", "llama3.2:3b")
 
 TIMEOUT_SEC = int(os.getenv("TIMEOUT_SEC", "60"))
 CONNECT_TIMEOUT_SEC = float(os.getenv("CONNECT_TIMEOUT_SEC", "5"))
@@ -36,8 +36,11 @@ MAX_INFLIGHT = int(os.getenv("MAX_INFLIGHT", "4"))
 
 MAX_REQUEST_AGE_MS = int(os.getenv("MAX_REQUEST_AGE_MS", "15000"))
 
-PROMPT_VERSION = os.getenv("PROMPT_VERSION", "v4-compacted-latest")
-SCHEMA_VERSION = os.getenv("SCHEMA_VERSION", "v2")
+PROMPT_VERSION = os.getenv("PROMPT_VERSION", "v5-compact-decision-only")
+SCHEMA_VERSION = os.getenv("SCHEMA_VERSION", "v3")
+
+OLLAMA_TEMPERATURE = float(os.getenv("OLLAMA_TEMPERATURE", "0.2"))
+OLLAMA_NUM_PREDICT = int(os.getenv("OLLAMA_NUM_PREDICT", "200"))
 
 
 def build_consumer_with_retry(*args, retries: int = 60, sleep_sec: float = 2.0, **kwargs) -> KafkaConsumer:
@@ -93,27 +96,29 @@ def wait_for_ollama() -> None:
 
 
 def build_prompt(request_event: Dict[str, Any]) -> Tuple[str, str]:
+    compact_input = {
+        "semantic_type": request_event.get("semantic_type"),
+        "severity": request_event.get("severity"),
+        "rule_id": request_event.get("rule_id"),
+        "evidence": request_event.get("evidence", {}),
+    }
+
     system = (
         "You are a relapse-risk reasoning assistant for smoking cessation support. "
-        "You assess momentary lapse/relapse risk from recent semantic risk signals. "
-        "You MUST output ONLY a single valid JSON object, with no markdown, no code fences, and no extra text. "
-        "Do NOT fabricate facts not present in the input. If information is missing, use null or a conservative default. "
-        "The JSON must contain all required fields exactly as specified."
+        "Return exactly one valid JSON object only. "
+        "Do not output markdown, code fences, or any extra text. "
+        "Do not include explanations outside the JSON."
     )
 
     user = {
         "task": (
-            "Based on the semantic risk event, estimate current lapse risk, intervention urgency, "
-            "and whether the system should monitor only, deliver a coping message, or suppress intervention temporarily."
+            "Estimate intervention urgency and whether the system should MONITOR, INTERVENE, "
+            "or SUPPRESS based on the semantic risk event."
         ),
-        "input": request_event,
+        "input": compact_input,
         "required_output_json_schema": {
-            "risk_level": "One of: LOW, MODERATE, HIGH, VERY_HIGH, UNKNOWN",
             "urgency": "Integer 0-100",
             "decision": "One of: MONITOR, INTERVENE, SUPPRESS",
-            "intervention_type": "Short label such as craving_coping, stress_regulation, motivation_support, efficacy_support, none",
-            "recommendations": "Array of short actionable sentences",
-            "rationale": "1-2 short sentences grounded in the input",
             "confidence": "Float 0.0-1.0",
         },
     }
@@ -154,7 +159,8 @@ def call_ollama(system: str, user: str) -> Tuple[Dict[str, Any], int, str | None
             "stream": False,
             "format": "json",
             "options": {
-                "temperature": 0.2,
+                "temperature": OLLAMA_TEMPERATURE,
+                "num_predict": OLLAMA_NUM_PREDICT,
             },
             "messages": [
                 {"role": "system", "content": system},
@@ -182,25 +188,9 @@ def call_ollama(system: str, user: str) -> Tuple[Dict[str, Any], int, str | None
 
 
 def normalize_result(result: Dict[str, Any]) -> Dict[str, Any]:
-    risk_level = str(result.get("risk_level", "UNKNOWN")).upper()
-    if risk_level not in {"LOW", "MODERATE", "HIGH", "VERY_HIGH", "UNKNOWN"}:
-        risk_level = "UNKNOWN"
-
     decision = str(result.get("decision", "MONITOR")).upper()
     if decision not in {"MONITOR", "INTERVENE", "SUPPRESS"}:
         decision = "MONITOR"
-
-    intervention_type = str(result.get("intervention_type", "none") or "none")
-
-    recommendations = result.get("recommendations", [])
-    if not isinstance(recommendations, list):
-        recommendations = [str(recommendations)]
-    recommendations = [str(x) for x in recommendations[:1]]
-
-    rationale = result.get("rationale", "")
-    if isinstance(rationale, list):
-        rationale = " ".join(str(x) for x in rationale)
-    rationale = str(rationale).strip()
 
     try:
         urgency = int(result.get("urgency", 0))
@@ -215,14 +205,70 @@ def normalize_result(result: Dict[str, Any]) -> Dict[str, Any]:
     confidence = max(0.0, min(1.0, confidence))
 
     return {
-        "risk_level": risk_level,
         "urgency": urgency,
         "decision": decision,
-        "intervention_type": intervention_type,
-        "recommendations": recommendations,
-        "rationale": rationale,
         "confidence": confidence,
     }
+
+
+def risk_from_semantic_and_urgency(semantic_type: str, severity: str, urgency: int) -> str:
+    semantic_type = str(semantic_type or "")
+    severity = str(severity or "").upper()
+
+    if semantic_type == "COMBINED_RELAPSE_RISK":
+        if severity == "VERY_HIGH" or urgency >= 85:
+            return "VERY_HIGH"
+        return "HIGH"
+
+    if semantic_type in {"RISING_STRESS_TRAJECTORY", "RISING_CRAVING_TRAJECTORY"}:
+        if urgency >= 85:
+            return "VERY_HIGH"
+        if urgency >= 65:
+            return "HIGH"
+        if urgency >= 40:
+            return "MODERATE"
+        return "LOW"
+
+    if semantic_type == "ELEVATED_STRESS":
+        return "HIGH" if urgency >= 65 else "MODERATE"
+
+    if semantic_type == "ELEVATED_CRAVING":
+        return "HIGH" if urgency >= 65 else "MODERATE"
+
+    if urgency >= 85:
+        return "VERY_HIGH"
+    if urgency >= 65:
+        return "HIGH"
+    if urgency >= 40:
+        return "MODERATE"
+    return "LOW"
+
+
+def intervention_type_from_semantic(semantic_type: str, decision: str) -> str:
+    if decision != "INTERVENE":
+        return "none"
+
+    semantic_type = str(semantic_type or "")
+
+    if semantic_type == "RISING_STRESS_TRAJECTORY":
+        return "stress_regulation"
+    if semantic_type == "RISING_CRAVING_TRAJECTORY":
+        return "craving_coping"
+    if semantic_type == "COMBINED_RELAPSE_RISK":
+        return "craving_coping, stress_regulation"
+    if semantic_type == "ELEVATED_STRESS":
+        return "stress_regulation"
+    if semantic_type == "ELEVATED_CRAVING":
+        return "craving_coping"
+
+    return "none"
+
+
+def rationale_from_fields(semantic_type: str, severity: str, urgency: int, decision: str) -> str:
+    return (
+        f"semantic_type={semantic_type}, severity={severity}, urgency={urgency}, "
+        f"decision={decision} after rule-normalized postprocessing."
+    )
 
 
 def build_output_base(request_event: Dict[str, Any], llm_ms: int) -> Dict[str, Any]:
@@ -271,15 +317,29 @@ def build_output_from_request_event(
             "reasoning_mode": "llm_fallback",
             "bypass_rule": None,
         })
-    else:
-        normalized = normalize_result(result)
-        out.update({
-            **normalized,
-            "error": None,
-            "reasoning_mode": "llm",
-            "bypass_rule": None,
-        })
+        return out
 
+    normalized = normalize_result(result)
+    semantic_type = str(request_event.get("semantic_type") or "")
+    severity = str(request_event.get("severity") or "")
+    urgency = normalized["urgency"]
+    decision = normalized["decision"]
+
+    risk_level = risk_from_semantic_and_urgency(semantic_type, severity, urgency)
+    intervention_type = intervention_type_from_semantic(semantic_type, decision)
+
+    out.update({
+        "risk_level": risk_level,
+        "urgency": urgency,
+        "decision": decision,
+        "intervention_type": intervention_type,
+        "recommendations": [],
+        "rationale": rationale_from_fields(semantic_type, severity, urgency, decision),
+        "confidence": normalized["confidence"],
+        "error": None,
+        "reasoning_mode": "llm",
+        "bypass_rule": None,
+    })
     return out
 
 
@@ -413,7 +473,7 @@ def main():
     print(
         f"[llm_reasoner] started bootstrap={BOOTSTRAP} consuming={IN_TOPIC} "
         f"producing={OUT_TOPIC} model={MODEL} workers={MAX_WORKERS} inflight={MAX_INFLIGHT} "
-        f"max_request_age_ms={MAX_REQUEST_AGE_MS}",
+        f"max_request_age_ms={MAX_REQUEST_AGE_MS} num_predict={OLLAMA_NUM_PREDICT}",
         flush=True,
     )
     print(f"[llm_reasoner] ollama_url={OLLAMA_URL}", flush=True)
@@ -514,8 +574,6 @@ def main():
                 scheduler_ts_ms = meta["scheduler_ts_ms"]
 
                 try:
-                    # If a newer request for the same user arrived while inference was running,
-                    # drop this result instead of emitting stale reasoning.
                     if not latest_seen.is_latest(user_id, scheduler_ts_ms):
                         tracker.mark_done(topic, partition, offset)
                         tracker.commit_contiguous()

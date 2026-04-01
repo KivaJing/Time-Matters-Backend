@@ -19,6 +19,7 @@
   },
 
   "rule_engine": {
-    "history_window_size": 5
+    "history_window_size": 5,
+    "emit_same_state_after_sec": 30
   }
 }
