@@ -1,7 +1,7 @@
 cd ~/kafka-cep-prototype
 docker-compose down 
 初始化：
-docker-compose up -d zookeeper kafka ksqldb ollama
+docker-compose up -d zookeeper kafka ksqldb ollama_full ollama_fast
 docker-compose up ksql_deployer
 
 启动长期服务：
@@ -50,16 +50,16 @@ BOOTSTRAP_SERVERS=localhost:9092 python intervention_engine.py
 
 Observer:
 cd observer 
-RUN_ID=exp_scaling_100c  WARMUP_SEC=10 MEASURE_SEC=200 python3 cep_observer.py
-RUN_ID=exp_scaling_100c WARMUP_SEC=10 MEASURE_SEC=200 python3 rule_observer.py
-RUN_ID=exp_scaling_100c WARMUP_SEC=10 MEASURE_SEC=200 python3 llm_observer.py
-RUN_ID=exp_scaling_100c WARMUP_SEC=10 MEASURE_SEC=200 python3 reasoning_requests_observer.py
-RUN_ID=exp_scaling_100c WARMUP_SEC=10 MEASURE_SEC=200 python3 fast_llm_reasoner_observer.py
-RUN_ID=exp_scaling_100c WARMUP_SEC=10 MEASURE_SEC=200 python3 intervention_observer.py
+RUN_ID=exp_scaling_100usr  WARMUP_SEC=10 MEASURE_SEC=200 python3 cep_observer.py
+RUN_ID=exp_scaling_100usr WARMUP_SEC=10 MEASURE_SEC=200 python3 rule_observer.py
+RUN_ID=exp_scaling_100usr WARMUP_SEC=10 MEASURE_SEC=200 python3 llm_observer.py
+RUN_ID=exp_scaling_100usr WARMUP_SEC=10 MEASURE_SEC=200 python3 reasoning_requests_observer.py
+RUN_ID=exp_scaling_100usr WARMUP_SEC=10 MEASURE_SEC=200 python3 fast_llm_reasoner_observer.py
+RUN_ID=exp_scaling_100usr WARMUP_SEC=10 MEASURE_SEC=200 python3 intervention_observer.py
 
 Simulator:
 cd simulator
-RUN_ID=exp_scaling_100c \
+RUN_ID=exp_scaling_100usr \
 NUM_USERS=100 \
 MODE=mixed_risk \
 EMIT_INTERVAL_SEC=5 \

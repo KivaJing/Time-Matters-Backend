@@ -5,7 +5,7 @@ import json
 import os
 import time
 from collections import deque
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, List
 
 from kafka import KafkaConsumer, KafkaProducer
 from kafka.structs import TopicPartition, OffsetAndMetadata
@@ -22,24 +22,23 @@ OUT_DROPPED_TOPIC = os.getenv("OUT_DROPPED_TOPIC", "reasoning_dropped_events")
 
 GROUP_ID = os.getenv("GROUP_ID", "reasoning-scheduler")
 
-COALESCE_SEC = float(os.getenv("COALESCE_SEC", "5"))
+COALESCE_SEC = float(os.getenv("COALESCE_SEC", "0.2"))
 MAX_PENDING = int(os.getenv("MAX_PENDING", "256"))
-MAX_PENDING_PER_USER = int(os.getenv("MAX_PENDING_PER_USER", "2"))
+MAX_PENDING_PER_USER = int(os.getenv("MAX_PENDING_PER_USER", "3"))
 
 ENABLE_PRIORITY_FILTER = os.getenv("ENABLE_PRIORITY_FILTER", "true").lower() == "true"
-DROP_MEDIUM_WHEN_PENDING_GE = int(os.getenv("DROP_MEDIUM_WHEN_PENDING_GE", "32"))
+DROP_MEDIUM_WHEN_PENDING_GE = int(os.getenv("DROP_MEDIUM_WHEN_PENDING_GE", "64"))
 DROP_LOW_ALWAYS = os.getenv("DROP_LOW_ALWAYS", "true").lower() == "true"
 
-ENABLE_DROPPED_TOPIC = os.getenv("ENABLE_DROPPED_TOPIC", "false").lower() == "true"
+ENABLE_DROPPED_TOPIC = os.getenv("ENABLE_DROPPED_TOPIC", "true").lower() == "true"
 
 ENABLE_USER_COOLDOWN = os.getenv("ENABLE_USER_COOLDOWN", "true").lower() == "true"
-USER_COOLDOWN_SEC = float(os.getenv("USER_COOLDOWN_SEC", "10"))
+USER_COOLDOWN_SEC = float(os.getenv("USER_COOLDOWN_SEC", "2"))
 
-# Separate admission control for full LLM and fast LLM paths
-MAX_LLM_REQUESTS_PER_SEC = float(os.getenv("MAX_LLM_REQUESTS_PER_SEC", "2"))
-MAX_FAST_LLM_REQUESTS_PER_SEC = float(os.getenv("MAX_FAST_LLM_REQUESTS_PER_SEC", "4"))
+MAX_LLM_REQUESTS_PER_SEC = float(os.getenv("MAX_LLM_REQUESTS_PER_SEC", "4"))
+MAX_FAST_LLM_REQUESTS_PER_SEC = float(os.getenv("MAX_FAST_LLM_REQUESTS_PER_SEC", "6"))
 
-SCHEDULER_VERSION = os.getenv("SCHEDULER_VERSION", "v2")
+SCHEDULER_VERSION = os.getenv("SCHEDULER_VERSION", "v4_scored")
 
 
 def build_consumer_with_retry(*args, retries: int = 60, sleep_sec: float = 2.0, **kwargs) -> KafkaConsumer:
@@ -138,8 +137,9 @@ def make_coalesce_key(semantic_event: Dict[str, Any]) -> Tuple[str, str, str, st
         str(semantic_event.get("severity")),
     )
 
+
 def pending_count_for_user(
-    pending_coalesce: Dict[Tuple[str, str, str], Dict[str, Any]],
+    pending_coalesce: Dict[Tuple[str, str, str, str], Dict[str, Any]],
     user_id: str,
 ) -> int:
     n = 0
@@ -267,7 +267,7 @@ def build_rule_based_reasoning_output(semantic_event: Dict[str, Any]) -> Dict[st
     return out
 
 
-def build_request_payload(semantic_event: Dict[str, Any], route: str = "llm") -> Dict[str, Any]:
+def build_request_payload(semantic_event: Dict[str, Any], route: str) -> Dict[str, Any]:
     now_ms = int(time.time() * 1000)
     payload = dict(semantic_event)
     payload["request_id"] = f"{semantic_event.get('user_id')}:{now_ms}"
@@ -297,7 +297,7 @@ def build_dropped_event(semantic_event: Dict[str, Any], reason: str, detail: str
 
 def should_drop_by_priority(
     semantic_event: Dict[str, Any],
-    pending_coalesce: Dict[Tuple[str, str, str], Dict[str, Any]],
+    pending_coalesce: Dict[Tuple[str, str, str, str], Dict[str, Any]],
 ) -> Tuple[bool, str | None]:
     if not ENABLE_PRIORITY_FILTER:
         return False, None
@@ -314,32 +314,79 @@ def should_drop_by_priority(
     return False, None
 
 
-def route_event(evt: dict) -> str:
-    routing_hint = str(evt.get("routing_hint") or "").strip().lower()
+def compute_priority_score(evt: Dict[str, Any], waiting_sec: float = 0.0) -> float:
     semantic_type = str(evt.get("semantic_type") or "")
     severity = str(evt.get("severity") or "").upper()
-    fast_llm_candidate = bool(evt.get("fast_llm_candidate", False))
-    all_candidates = evt.get("all_candidates") or []
+    evidence = evt.get("evidence") or {}
 
-    candidate_types = {
-        str(c.get("semantic_type"))
-        for c in all_candidates
-        if isinstance(c, dict) and c.get("semantic_type") is not None
+    craving = float(evidence.get("craving_score") or 0.0)
+    stress = float(evidence.get("stress_score") or 0.0)
+    neg = float(evidence.get("negative_affect_score") or 0.0)
+    lapse = 1.0 if evidence.get("recent_lapse") else 0.0
+
+    score = 0.0
+
+    severity_weight = {
+        "VERY_HIGH": 100.0,
+        "HIGH": 70.0,
+        "MEDIUM": 40.0,
+        "LOW": 10.0,
     }
+    score += severity_weight.get(severity, 0.0)
 
-    # 1) Trust explicit upstream routing hint first
+    type_weight = {
+        "COMBINED_RELAPSE_RISK": 35.0,
+        "RISING_STRESS_TRAJECTORY": 18.0,
+        "RISING_CRAVING_TRAJECTORY": 18.0,
+        "ELEVATED_STRESS": 12.0,
+        "ELEVATED_CRAVING": 12.0,
+        "LOW_MOTIVATION": 10.0,
+        "LOW_SELF_EFFICACY": 10.0,
+    }
+    score += type_weight.get(semantic_type, 0.0)
+
+    evidence_strength = max(craving, stress, neg)
+    score += min(20.0, evidence_strength / 5.0)
+
+    if lapse:
+        score += 20.0
+
+    # aging bonus: avoid starvation
+    score += min(15.0, waiting_sec * 5.0)
+
+    return score
+
+
+def choose_route_with_score(evt: Dict[str, Any], score: float) -> str:
+    semantic_type = str(evt.get("semantic_type") or "")
+    severity = str(evt.get("severity") or "").upper()
+    evidence = evt.get("evidence") or {}
+
+    craving = float(evidence.get("craving_score") or 0.0)
+    stress = float(evidence.get("stress_score") or 0.0)
+    neg = float(evidence.get("negative_affect_score") or 0.0)
+    lapse = bool(evidence.get("recent_lapse"))
+
+    routing_hint = str(evt.get("routing_hint") or "").strip().lower()
     if routing_hint in {"llm", "fast_llm", "rule_based"}:
         return routing_hint
 
-    # 2) Strong safety rule for very high combined risk
+    # hard safety route
     if semantic_type == "COMBINED_RELAPSE_RISK" or severity == "VERY_HIGH":
         return "llm"
 
-    # 3) Stable direct rule-based path for trajectory events
-    if semantic_type in {"RISING_STRESS_TRAJECTORY", "RISING_CRAVING_TRAJECTORY"}:
+    # stable trajectory cases stay rule-based unless evidence is unusually strong
+    if semantic_type == "RISING_STRESS_TRAJECTORY":
+        if lapse or max(stress, neg) >= 75 or score >= 95:
+            return "llm"
         return "rule_based"
 
-    # 4) Fast LLM path for medium-risk or explicitly marked candidates
+    if semantic_type == "RISING_CRAVING_TRAJECTORY":
+        if lapse or craving >= 75 or score >= 95:
+            return "llm"
+        return "rule_based"
+
+    # borderline medium/high cases -> fast/full according to score
     fast_candidate_types = {
         "ELEVATED_STRESS",
         "ELEVATED_CRAVING",
@@ -347,20 +394,20 @@ def route_event(evt: dict) -> str:
         "LOW_SELF_EFFICACY",
     }
 
-    if fast_llm_candidate:
-        if severity in {"MEDIUM", "HIGH"}:
-            return "fast_llm"
-
-    if candidate_types & fast_candidate_types:
-        if severity in {"MEDIUM", "HIGH"}:
-            return "fast_llm"
-
     if semantic_type in fast_candidate_types:
+        if score >= 85:
+            return "llm"
         if severity in {"MEDIUM", "HIGH"}:
             return "fast_llm"
 
-    # 5) Conservative fallback
+    if severity == "HIGH" and score >= 80:
+        return "llm"
+
+    if severity in {"MEDIUM", "HIGH"}:
+        return "fast_llm"
+
     return "drop"
+
 
 def emit_reasoning_event(
     producer: KafkaProducer,
@@ -405,123 +452,151 @@ def emit_dropped(
     )
 
 
+def _send_to_route(
+    route: str,
+    producer: KafkaProducer,
+    tracker: CommitTracker,
+    entry: Dict[str, Any],
+    last_enqueued_by_user: Dict[str, float],
+    recent_llm_enqueues: deque,
+    recent_fast_llm_enqueues: deque,
+) -> None:
+    semantic_event = entry["semantic_event"]
+    user_id = str(semantic_event.get("user_id"))
+
+    if route == "rule_based":
+        out = build_rule_based_reasoning_output(semantic_event)
+        emit_reasoning_event(producer, tracker, entry, out, tag="rule_based")
+        return
+
+    if route == "drop":
+        dropped_event = build_dropped_event(
+            semantic_event,
+            reason="not_routed_to_model",
+            detail=f"semantic_type={semantic_event.get('semantic_type')}, severity={semantic_event.get('severity')}",
+        )
+        emit_dropped(producer, tracker, entry, dropped_event)
+        return
+
+    if route == "llm":
+        if not admission_allowed(recent_llm_enqueues, MAX_LLM_REQUESTS_PER_SEC):
+            dropped_event = build_dropped_event(
+                semantic_event,
+                reason="global_rate_limit",
+                detail=f"max_llm_requests_per_sec={MAX_LLM_REQUESTS_PER_SEC}",
+            )
+            emit_dropped(producer, tracker, entry, dropped_event)
+            return
+
+        request_payload = build_request_payload(semantic_event, route="llm")
+        send_future = producer.send(OUT_REQUEST_TOPIC, key=user_id, value=request_payload)
+        send_future.get(timeout=10)
+
+        now = time.time()
+        last_enqueued_by_user[user_id] = now
+        recent_llm_enqueues.append(now)
+
+        tracker.mark_done(entry["topic"], entry["partition"], entry["offset"])
+        tracker.commit_contiguous()
+
+        print(
+            f"[reasoning_scheduler] enqueued reasoning_request "
+            f"user_id={semantic_event.get('user_id')} semantic_type={semantic_event.get('semantic_type')} "
+            f"partition={entry['partition']} offset={entry['offset']}",
+            flush=True,
+        )
+        return
+
+    if route == "fast_llm":
+        if not admission_allowed(recent_fast_llm_enqueues, MAX_FAST_LLM_REQUESTS_PER_SEC):
+            dropped_event = build_dropped_event(
+                semantic_event,
+                reason="fast_global_rate_limit",
+                detail=f"max_fast_llm_requests_per_sec={MAX_FAST_LLM_REQUESTS_PER_SEC}",
+            )
+            emit_dropped(producer, tracker, entry, dropped_event)
+            return
+
+        request_payload = build_request_payload(semantic_event, route="fast_llm")
+        send_future = producer.send(OUT_FAST_REQUEST_TOPIC, key=user_id, value=request_payload)
+        send_future.get(timeout=10)
+
+        now = time.time()
+        last_enqueued_by_user[user_id] = now
+        recent_fast_llm_enqueues.append(now)
+
+        tracker.mark_done(entry["topic"], entry["partition"], entry["offset"])
+        tracker.commit_contiguous()
+
+        print(
+            f"[reasoning_scheduler] enqueued fast_reasoning_request "
+            f"user_id={semantic_event.get('user_id')} semantic_type={semantic_event.get('semantic_type')} "
+            f"partition={entry['partition']} offset={entry['offset']}",
+            flush=True,
+        )
+        return
+
+    dropped_event = build_dropped_event(
+        semantic_event,
+        reason="unknown_route",
+        detail=f"route={route}",
+    )
+    emit_dropped(producer, tracker, entry, dropped_event)
+
+
 def flush_ready_coalesced(
-    pending_coalesce: Dict[Tuple[str, str, str], Dict[str, Any]],
+    pending_coalesce: Dict[Tuple[str, str, str, str], Dict[str, Any]],
     producer: KafkaProducer,
     tracker: CommitTracker,
     last_enqueued_by_user: Dict[str, float],
     recent_llm_enqueues: deque,
     recent_fast_llm_enqueues: deque,
 ) -> None:
-    ready_keys = [k for k, v in pending_coalesce.items() if v["flush_at"] <= time.time()]
+    now = time.time()
+    ready_items: List[Tuple[Tuple[str, str, str, str], Dict[str, Any]]] = [
+        (k, v) for k, v in pending_coalesce.items() if v["flush_at"] <= now
+    ]
 
-    for key in ready_keys:
-        entry = pending_coalesce[key]
+    if not ready_items:
+        tracker.commit_contiguous()
+        return
+
+    scored = []
+    for key, entry in ready_items:
         semantic_event = entry["semantic_event"]
         user_id = str(semantic_event.get("user_id"))
 
         if user_in_cooldown(user_id, last_enqueued_by_user):
             continue
 
-        route = route_event(semantic_event)
+        waiting_sec = max(0.0, now - entry["flush_at"] + COALESCE_SEC)
+        score = compute_priority_score(semantic_event, waiting_sec=waiting_sec)
+        route = choose_route_with_score(semantic_event, score)
+        scored.append((score, route, key, entry))
 
-        if route == "rule_based":
-            pending_coalesce.pop(key)
-            out = build_rule_based_reasoning_output(semantic_event)
-            emit_reasoning_event(producer, tracker, entry, out, tag="rule_based")
-            continue
+    # high score first
+    scored.sort(key=lambda x: x[0], reverse=True)
 
-        if route == "drop":
-            pending_coalesce.pop(key)
-            dropped_event = build_dropped_event(
-                semantic_event,
-                reason="not_routed_to_model",
-                detail=f"semantic_type={semantic_event.get('semantic_type')}, severity={semantic_event.get('severity')}",
-            )
-            emit_dropped(producer, tracker, entry, dropped_event)
-            continue
-
-        if route == "llm":
-            if not admission_allowed(recent_llm_enqueues, MAX_LLM_REQUESTS_PER_SEC):
-                pending_coalesce.pop(key)
-                dropped_event = build_dropped_event(
-                    semantic_event,
-                    reason="global_rate_limit",
-                    detail=f"max_llm_requests_per_sec={MAX_LLM_REQUESTS_PER_SEC}",
-                )
-                emit_dropped(producer, tracker, entry, dropped_event)
-                continue
-
-            pending_coalesce.pop(key)
-            request_payload = build_request_payload(semantic_event, route="llm")
-
-            send_future = producer.send(
-                OUT_REQUEST_TOPIC,
-                key=user_id,
-                value=request_payload,
-            )
-            send_future.get(timeout=10)
-
-            now = time.time()
-            last_enqueued_by_user[user_id] = now
-            recent_llm_enqueues.append(now)
-
-            tracker.mark_done(entry["topic"], entry["partition"], entry["offset"])
-            tracker.commit_contiguous()
-
-            print(
-                f"[reasoning_scheduler] enqueued reasoning_request "
-                f"user_id={semantic_event.get('user_id')} "
-                f"semantic_type={semantic_event.get('semantic_type')} "
-                f"partition={entry['partition']} offset={entry['offset']}",
-                flush=True,
-            )
-            continue
-
-        if route == "fast_llm":
-            if not admission_allowed(recent_fast_llm_enqueues, MAX_FAST_LLM_REQUESTS_PER_SEC):
-                pending_coalesce.pop(key)
-                dropped_event = build_dropped_event(
-                    semantic_event,
-                    reason="fast_global_rate_limit",
-                    detail=f"max_fast_llm_requests_per_sec={MAX_FAST_LLM_REQUESTS_PER_SEC}",
-                )
-                emit_dropped(producer, tracker, entry, dropped_event)
-                continue
-
-            pending_coalesce.pop(key)
-            request_payload = build_request_payload(semantic_event, route="fast_llm")
-
-            send_future = producer.send(
-                OUT_FAST_REQUEST_TOPIC,
-                key=user_id,
-                value=request_payload,
-            )
-            send_future.get(timeout=10)
-
-            now = time.time()
-            last_enqueued_by_user[user_id] = now
-            recent_fast_llm_enqueues.append(now)
-
-            tracker.mark_done(entry["topic"], entry["partition"], entry["offset"])
-            tracker.commit_contiguous()
-
-            print(
-                f"[reasoning_scheduler] enqueued fast_reasoning_request "
-                f"user_id={semantic_event.get('user_id')} "
-                f"semantic_type={semantic_event.get('semantic_type')} "
-                f"partition={entry['partition']} offset={entry['offset']}",
-                flush=True,
-            )
-            continue
-
-        pending_coalesce.pop(key)
-        dropped_event = build_dropped_event(
-            semantic_event,
-            reason="unknown_route",
-            detail=f"route={route}",
+    for score, route, key, entry in scored:
+        pending_coalesce.pop(key, None)
+        _send_to_route(
+            route=route,
+            producer=producer,
+            tracker=tracker,
+            entry=entry,
+            last_enqueued_by_user=last_enqueued_by_user,
+            recent_llm_enqueues=recent_llm_enqueues,
+            recent_fast_llm_enqueues=recent_fast_llm_enqueues,
         )
-        emit_dropped(producer, tracker, entry, dropped_event)
+
+        print(
+            f"[reasoning_scheduler] scored_flush "
+            f"user_id={entry['semantic_event'].get('user_id')} "
+            f"semantic_type={entry['semantic_event'].get('semantic_type')} "
+            f"severity={entry['semantic_event'].get('severity')} "
+            f"score={score:.1f} route={route}",
+            flush=True,
+        )
 
     tracker.commit_contiguous()
 
@@ -548,7 +623,7 @@ def main():
     )
 
     tracker = CommitTracker(consumer)
-    pending_coalesce: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+    pending_coalesce: Dict[Tuple[str, str, str, str], Dict[str, Any]] = {}
     last_enqueued_by_user: Dict[str, float] = {}
     recent_llm_enqueues: deque = deque()
     recent_fast_llm_enqueues: deque = deque()
@@ -556,11 +631,10 @@ def main():
     print(
         f"[reasoning_scheduler] started bootstrap={BOOTSTRAP} "
         f"consuming={IN_TOPIC} request_topic={OUT_REQUEST_TOPIC} "
-        f"fast_request_topic={OUT_FAST_REQUEST_TOPIC} "
-        f"reasoning_topic={OUT_REASONING_TOPIC} dropped_topic={OUT_DROPPED_TOPIC} "
-        f"coalesce_sec={COALESCE_SEC} max_pending={MAX_PENDING} "
-        f"user_cooldown_enabled={ENABLE_USER_COOLDOWN} user_cooldown_sec={USER_COOLDOWN_SEC} "
-        f"max_llm_requests_per_sec={MAX_LLM_REQUESTS_PER_SEC} "
+        f"fast_request_topic={OUT_FAST_REQUEST_TOPIC} reasoning_topic={OUT_REASONING_TOPIC} "
+        f"dropped_topic={OUT_DROPPED_TOPIC} coalesce_sec={COALESCE_SEC} "
+        f"max_pending={MAX_PENDING} user_cooldown_enabled={ENABLE_USER_COOLDOWN} "
+        f"user_cooldown_sec={USER_COOLDOWN_SEC} max_llm_requests_per_sec={MAX_LLM_REQUESTS_PER_SEC} "
         f"max_fast_llm_requests_per_sec={MAX_FAST_LLM_REQUESTS_PER_SEC} "
         f"scheduler_version={SCHEDULER_VERSION}",
         flush=True,

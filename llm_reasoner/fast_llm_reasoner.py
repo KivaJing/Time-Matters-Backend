@@ -24,25 +24,24 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434/api/generate")
 OLLAMA_TAGS_URL = os.getenv("OLLAMA_TAGS_URL", "http://ollama:11434/api/tags")
 MODEL = os.getenv("MODEL", "granite3-moe:1b")
 
-TIMEOUT_SEC = int(os.getenv("TIMEOUT_SEC", "6"))
+TIMEOUT_SEC = int(os.getenv("TIMEOUT_SEC", "8"))
 CONNECT_TIMEOUT_SEC = float(os.getenv("CONNECT_TIMEOUT_SEC", "1"))
 READ_TIMEOUT_SEC = float(os.getenv("READ_TIMEOUT_SEC", str(TIMEOUT_SEC)))
 
 OLLAMA_WAIT_RETRIES = int(os.getenv("OLLAMA_WAIT_RETRIES", "30"))
 OLLAMA_WAIT_SEC = float(os.getenv("OLLAMA_WAIT_SEC", "2"))
 
-MAX_WORKERS = int(os.getenv("MAX_WORKERS", "1"))
-MAX_INFLIGHT = int(os.getenv("MAX_INFLIGHT", "1"))
+MAX_WORKERS = int(os.getenv("MAX_WORKERS", "4"))
+MAX_INFLIGHT = int(os.getenv("MAX_INFLIGHT", "8"))
 
-MAX_REQUEST_AGE_MS = int(os.getenv("MAX_REQUEST_AGE_MS", "2000"))
+MAX_REQUEST_AGE_MS = int(os.getenv("MAX_REQUEST_AGE_MS", "4000"))
 
 PROMPT_VERSION = os.getenv("PROMPT_VERSION", "fast-v1-minimal")
 SCHEMA_VERSION = os.getenv("SCHEMA_VERSION", "v2")
 
-OLLAMA_NUM_PREDICT = int(os.getenv("OLLAMA_NUM_PREDICT", "12"))
-OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "128"))
+OLLAMA_NUM_PREDICT = int(os.getenv("OLLAMA_NUM_PREDICT", "64"))
+OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "256"))
 OLLAMA_TEMPERATURE = float(os.getenv("OLLAMA_TEMPERATURE", "0.0"))
-OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "10m")
 
 # Reuse HTTP connections
 SESSION = requests.Session()
@@ -116,8 +115,17 @@ def build_prompt(request_event: Dict[str, Any]) -> str:
     lapse = evidence.get("recent_lapse")
 
     return (
-        'JSON only: {"risk_level":"LOW|HIGH|UNKNOWN","decision":"MONITOR|INTERVENE","urgency":0,"intervention_type":"none"}\n'
-        f"type={semantic_type};sev={severity};cr={craving};st={stress};na={neg};lp={lapse}"
+        "Return exactly one JSON object only.\n"
+        'Schema: {"urgency": <0-100 int>, "intervention_type": "none|stress_regulation|craving_coping"}\n'
+        "Use higher urgency for stronger or converging evidence.\n"
+        "Use lower urgency for weak or ambiguous evidence.\n"
+        "No markdown. No explanation.\n"
+        f"semantic_type={semantic_type}\n"
+        f"severity={severity}\n"
+        f"craving_score={craving}\n"
+        f"stress_score={stress}\n"
+        f"negative_affect_score={neg}\n"
+        f"recent_lapse={lapse}\n"
     )
 
 def extract_json_object(text: str) -> Dict[str, Any]:
@@ -154,7 +162,6 @@ def call_ollama(prompt: str) -> Tuple[Dict[str, Any], int, str | None]:
             "prompt": prompt,
             "stream": False,
             "format": "json",
-            "keep_alive": OLLAMA_KEEP_ALIVE,
             "options": {
                 "temperature": 0,
                 "num_predict": OLLAMA_NUM_PREDICT,
@@ -180,28 +187,41 @@ def call_ollama(prompt: str) -> Tuple[Dict[str, Any], int, str | None]:
         llm_ms = int((time.time() - t0) * 1000)
         return {}, llm_ms, repr(e)
 
-def normalize_result(result: Dict[str, Any]) -> Dict[str, Any]:
-    risk_level = str(result.get("risk_level", "UNKNOWN")).upper()
-    if risk_level not in {"LOW", "HIGH", "UNKNOWN"}:
-        risk_level = "UNKNOWN"
-
-    decision = str(result.get("decision", "MONITOR")).upper()
-    if decision not in {"MONITOR", "INTERVENE"}:
-        decision = "MONITOR"
-
+def normalize_result(result: Dict[str, Any], request_event: Dict[str, Any]) -> Dict[str, Any]:
     try:
         urgency = int(result.get("urgency", 0))
     except Exception:
         urgency = 0
     urgency = max(0, min(100, urgency))
 
-    intervention_type = str(result.get("intervention_type", "none") or "none").strip()[:32]
+    intervention_type = str(result.get("intervention_type", "none") or "none").strip()
+    if intervention_type not in {"none", "stress_regulation", "craving_coping"}:
+        intervention_type = "none"
 
-    if risk_level == "UNKNOWN":
-        if decision == "INTERVENE" or urgency >= 70:
-            risk_level = "HIGH"
-        else:
-            risk_level = "LOW"
+    semantic_type = str(request_event.get("semantic_type") or "")
+    severity = str(request_event.get("severity") or "").upper()
+
+    if urgency >= 70:
+        decision = "INTERVENE"
+        risk_level = "HIGH"
+        if intervention_type == "none":
+            if semantic_type in {"ELEVATED_STRESS", "LOW_SELF_EFFICACY"}:
+                intervention_type = "stress_regulation"
+            elif semantic_type in {"ELEVATED_CRAVING", "LOW_MOTIVATION"}:
+                intervention_type = "craving_coping"
+    elif urgency >= 40:
+        decision = "MONITOR"
+        risk_level = "MODERATE"
+        intervention_type = "none"
+    else:
+        decision = "MONITOR"
+        risk_level = "LOW"
+        intervention_type = "none"
+
+    if severity == "HIGH" and urgency < 50:
+        urgency = 50
+        decision = "MONITOR"
+        risk_level = "MODERATE"
 
     return {
         "risk_level": risk_level,
@@ -261,7 +281,7 @@ def build_output_from_request_event(
             "bypass_rule": None,
         })
     else:
-        normalized = normalize_result(result)
+        normalized = normalize_result(result, request_event)
         out.update({
             **normalized,
             "error": None,

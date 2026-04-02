@@ -72,6 +72,8 @@ services:
     image: ollama/ollama:latest
     environment:
       OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_NUM_PARALLEL: "3"
+      OLLAMA_KEEP_ALIVE: "-1"
     volumes:
       - ollama-full-data:/root/.ollama
     ports:
@@ -83,6 +85,8 @@ services:
     image: ollama/ollama:latest
     environment:
       OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_NUM_PARALLEL: "4"
+      OLLAMA_KEEP_ALIVE: "-1"
     volumes:
       - ollama-fast-data:/root/.ollama
     ports:
@@ -125,20 +129,23 @@ services:
       OUT_DROPPED_TOPIC: reasoning_dropped_events
       OUT_FAST_REQUEST_TOPIC: fast_reasoning_requests
       GROUP_ID: reasoning-scheduler-v2
-      
-      COALESCE_SEC: 0.2
+
+      COALESCE_SEC: 0.1
       MAX_PENDING: 256
-      MAX_PENDING_PER_USER: 3
-      USER_COOLDOWN_SEC: 2
+      MAX_PENDING_PER_USER: 5
+
       ENABLE_USER_COOLDOWN: "true"
+      USER_COOLDOWN_SEC: 1
 
       ENABLE_PRIORITY_FILTER: "true"
-      DROP_MEDIUM_WHEN_PENDING_GE: 64
+      DROP_MEDIUM_WHEN_PENDING_GE: 96
       DROP_LOW_ALWAYS: "true"
-      MAX_LLM_REQUESTS_PER_SEC: "3"
-      MAX_FAST_LLM_REQUESTS_PER_SEC: "3"
+
+      MAX_LLM_REQUESTS_PER_SEC: "4"
+      MAX_FAST_LLM_REQUESTS_PER_SEC: "6"
+
       ENABLE_DROPPED_TOPIC: "true"
-      SCHEDULER_VERSION: "v3"
+      SCHEDULER_VERSION: "v4_scored"
 
       PYTHONUNBUFFERED: "1"
     restart: unless-stopped
@@ -165,14 +172,16 @@ services:
       MODEL: llama3.2:3b
 
       TIMEOUT_SEC: 60
-      CONNECT_TIMEOUT_SEC: 5
-      READ_TIMEOUT_SEC: 60
+      CONNECT_TIMEOUT_SEC: 2
+      READ_TIMEOUT_SEC: 15
       OLLAMA_WAIT_RETRIES: 30
       OLLAMA_WAIT_SEC: 2
 
       MAX_WORKERS: 4
       MAX_INFLIGHT: 8
-      MAX_REQUEST_AGE_MS: "15000"
+      MAX_REQUEST_AGE_MS: "5000"
+      OLLAMA_NUM_PREDICT: "100"
+      OLLAMA_TEMPERATURE: "0.0"
 
       PROMPT_VERSION: "v5-compact-decision-only"
       SCHEMA_VERSION: "v3"
@@ -197,14 +206,14 @@ services:
       OLLAMA_URL: http://ollama_fast:11434/api/generate
       OLLAMA_TAGS_URL: http://ollama_fast:11434/api/tags
       MODEL: granite3-moe:1b
-      TIMEOUT_SEC: "6"
+      TIMEOUT_SEC: "8"
       CONNECT_TIMEOUT_SEC: "1"
-      READ_TIMEOUT_SEC: "6"
-      MAX_WORKERS: "2"
-      MAX_INFLIGHT: "2"
+      READ_TIMEOUT_SEC: "10"
+      MAX_WORKERS: "4"
+      MAX_INFLIGHT: "8"
       MAX_REQUEST_AGE_MS: "4000"
-      OLLAMA_NUM_PREDICT: "12"
-      OLLAMA_NUM_CTX: "128"
+      OLLAMA_NUM_PREDICT: "64"
+      OLLAMA_NUM_CTX: "256"
       OLLAMA_TEMPERATURE: "0.0"
       OLLAMA_KEEP_ALIVE: "10m"
       PYTHONUNBUFFERED: "1"
