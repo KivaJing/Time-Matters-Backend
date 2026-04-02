@@ -72,7 +72,7 @@ services:
     image: ollama/ollama:latest
     environment:
       OLLAMA_HOST: 0.0.0.0:11434
-      OLLAMA_NUM_PARALLEL: "3"
+      OLLAMA_NUM_PARALLEL: "2"
       OLLAMA_KEEP_ALIVE: "-1"
     volumes:
       - ollama-full-data:/root/.ollama
@@ -85,7 +85,7 @@ services:
     image: ollama/ollama:latest
     environment:
       OLLAMA_HOST: 0.0.0.0:11434
-      OLLAMA_NUM_PARALLEL: "4"
+      OLLAMA_NUM_PARALLEL: "3"
       OLLAMA_KEEP_ALIVE: "-1"
     volumes:
       - ollama-fast-data:/root/.ollama
@@ -138,11 +138,11 @@ services:
       USER_COOLDOWN_SEC: 1
 
       ENABLE_PRIORITY_FILTER: "true"
-      DROP_MEDIUM_WHEN_PENDING_GE: 96
+      DROP_MEDIUM_WHEN_PENDING_GE: 64
       DROP_LOW_ALWAYS: "true"
 
-      MAX_LLM_REQUESTS_PER_SEC: "4"
-      MAX_FAST_LLM_REQUESTS_PER_SEC: "6"
+      MAX_LLM_REQUESTS_PER_SEC: "3"
+      MAX_FAST_LLM_REQUESTS_PER_SEC: "4"
 
       ENABLE_DROPPED_TOPIC: "true"
       SCHEDULER_VERSION: "v4_scored"
@@ -208,11 +208,11 @@ services:
       MODEL: granite3-moe:1b
       TIMEOUT_SEC: "8"
       CONNECT_TIMEOUT_SEC: "1"
-      READ_TIMEOUT_SEC: "10"
+      READ_TIMEOUT_SEC: "8"
       MAX_WORKERS: "4"
       MAX_INFLIGHT: "8"
       MAX_REQUEST_AGE_MS: "4000"
-      OLLAMA_NUM_PREDICT: "64"
+      OLLAMA_NUM_PREDICT: "32"
       OLLAMA_NUM_CTX: "256"
       OLLAMA_TEMPERATURE: "0.0"
       OLLAMA_KEEP_ALIVE: "10m"
