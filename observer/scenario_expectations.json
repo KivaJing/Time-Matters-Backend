@@ -1,0 +1,53 @@
+{
+  "schema_version": "v1",
+  "description": "Handwritten scenario-to-semantic expectations for functional correctness evaluation. Expected labels are based on scripted scenarios in event_generator.py. low_motivation is marked as provisional because the active rule definitions were not available in the uploaded files.",
+  "scenarios": {
+    "baseline": {
+      "source_modes": ["baseline_only", "mixed_risk"],
+      "expected_semantic": [],
+      "expected_primary_semantic": "NONE",
+      "should_trigger": false,
+      "notes": "Negative control. Baseline EMA values should ideally not emit semantic_events. Any emitted semantic label should be treated as a false positive unless justified by current rules."
+    },
+    "stress_rising": {
+      "source_modes": ["stress_rising", "mixed_risk"],
+      "expected_semantic": ["RISING_STRESS_TRAJECTORY"],
+      "expected_primary_semantic": "RISING_STRESS_TRAJECTORY",
+      "should_trigger": true,
+      "notes": "Stress rises strongly over time while motivation and self-efficacy decrease."
+    },
+    "craving_rising": {
+      "source_modes": ["craving_rising", "mixed_risk"],
+      "expected_semantic": ["RISING_CRAVING_TRAJECTORY"],
+      "expected_primary_semantic": "RISING_CRAVING_TRAJECTORY",
+      "should_trigger": true,
+      "notes": "Craving rises strongly over time; stress also rises more mildly."
+    },
+    "low_motivation": {
+      "source_modes": ["low_motivation"],
+      "expected_semantic": ["ELEVATED_STRESS", "COMBINED_RELAPSE_RISK"],
+      "expected_primary_semantic": "REVIEW_NEEDED",
+      "should_trigger": true,
+      "provisional": true,
+      "notes": "This scenario is defined in event_generator.py, but the uploaded files did not include rules.py / evaluate_rules(). Use this row as provisional and update it after checking the actual rule thresholds."
+    },
+    "relapse_risk": {
+      "source_modes": ["relapse_risk", "mixed_risk"],
+      "expected_semantic": ["COMBINED_RELAPSE_RISK"],
+      "expected_primary_semantic": "COMBINED_RELAPSE_RISK",
+      "should_trigger": true,
+      "notes": "Combined deterioration with high craving, high stress, falling motivation and self-efficacy, plus occasional low receptivity / meeting / moving context."
+    },
+    "mixed_risk": {
+      "source_modes": ["mixed_risk"],
+      "composite_mode": true,
+      "expected_phase_sequence": [
+        "baseline",
+        "stress_rising",
+        "craving_rising",
+        "relapse_risk"
+      ],
+      "notes": "The mixed_risk mode does not emit scenario='mixed_risk' in the raw events. Instead, it cycles through baseline, stress_rising, craving_rising, and relapse_risk phases. For correctness evaluation, use the per-event scenario field, not the mode name."
+    }
+  }
+}
