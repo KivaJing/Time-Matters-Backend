@@ -9,6 +9,7 @@ BOOTSTRAP = os.getenv("BOOTSTRAP", "localhost:9092")
 IN_TOPIC = os.getenv("IN_TOPIC", "reasoning_events")
 OUT_TOPIC = os.getenv("OUT_TOPIC", "intervention_events")
 GROUP_ID = os.getenv("GROUP_ID", "intervention-engine")
+STATE_FILE = os.getenv("STATE_FILE", "./intervention_state.json")
 
 
 def build_consumer_with_retry(*args, retries: int = 60, sleep_sec: float = 2.0, **kwargs) -> KafkaConsumer:
@@ -35,21 +36,44 @@ def build_producer_with_retry(retries: int = 60, sleep_sec: float = 2.0, **kwarg
     raise last
 
 
+def load_state():
+    if not os.path.exists(STATE_FILE):
+        return {"users": {}}
+    try:
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {"users": {}}
+
+
+def get_user_state(user_id: str):
+    st = load_state()
+    return (st.get("users") or {}).get(user_id, {})
+
+
 def decide_action(evt: dict) -> dict:
     decision = evt.get("decision", "MONITOR")
     urgency = int(evt.get("urgency", 0) or 0)
     evidence = evt.get("evidence", {}) or {}
+    intervention_type = evt.get("intervention_type", "none")
+    user_id = evt.get("user_id")
 
     receptivity = int(evidence.get("latest_receptivity", 1) or 0)
     is_moving = int(evidence.get("latest_is_moving", 0) or 0)
     in_meeting = int(evidence.get("latest_in_meeting", 0) or 0)
-    intervention_type = evt.get("intervention_type", "none")
 
     action = "MONITOR_ONLY"
     suppression_reason = None
     message = None
 
-    if decision == "SUPPRESS" or receptivity == 0:
+    now_ms = int(time.time() * 1000)
+    user_state = get_user_state(user_id)
+    cooldown_until_ms = int(user_state.get("cooldown_until_ms", 0) or 0)
+
+    if cooldown_until_ms > now_ms:
+        action = "SUPPRESS_INTERVENTION"
+        suppression_reason = "user_cooldown"
+    elif decision == "SUPPRESS" or receptivity == 0:
         action = "SUPPRESS_INTERVENTION"
         suppression_reason = "low_receptivity"
     elif in_meeting == 1:
@@ -65,7 +89,7 @@ def decide_action(evt: dict) -> dict:
 
     return {
         "run_id": evt.get("run_id"),
-        "user_id": evt.get("user_id"),
+        "user_id": user_id,
         "window_start_ms": evt.get("window_start_ms"),
         "window_end_ms": evt.get("window_end_ms"),
         "reasoning_ts_ms": evt.get("reasoning_ts_ms"),
@@ -122,7 +146,7 @@ def main():
                         fut.get(timeout=10)
                         consumer.commit()
                         print(
-                            f"[intervention_engine] emitted intervention_event user_id={out.get('user_id')} action={out.get('action')} urgency={out.get('urgency')}",
+                            f"[intervention_engine] emitted intervention_event user_id={out.get('user_id')} action={out.get('action')} suppression_reason={out.get('suppression_reason')}",
                             flush=True,
                         )
                     except KafkaError as e:

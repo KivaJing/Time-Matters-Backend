@@ -1,0 +1,12 @@
+{
+  "users": {
+    "user_1": {
+      "last_feedback_action": "intervention_completed",
+      "last_feedback_ts_ms": 1775501218019,
+      "last_intervention_ts_ms": 1775501187851,
+      "last_intervention_type": "stress_regulation",
+      "last_run_id": "unity1",
+      "cooldown_until_ms": 1775501398336
+    }
+  }
+}

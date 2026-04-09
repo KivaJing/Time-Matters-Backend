@@ -39,7 +39,7 @@ MAX_REQUEST_AGE_MS = int(os.getenv("MAX_REQUEST_AGE_MS", "15000"))
 PROMPT_VERSION = os.getenv("PROMPT_VERSION", "v5-compact-decision-only")
 SCHEMA_VERSION = os.getenv("SCHEMA_VERSION", "v3")
 
-OLLAMA_TEMPERATURE = float(os.getenv("OLLAMA_TEMPERATURE", "0.2"))
+OLLAMA_TEMPERATURE = float(os.getenv("OLLAMA_TEMPERATURE", "0.0"))
 OLLAMA_NUM_PREDICT = int(os.getenv("OLLAMA_NUM_PREDICT", "200"))
 
 
