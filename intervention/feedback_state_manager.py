@@ -60,19 +60,29 @@ def update_user(feedback: dict):
     user["last_intervention_type"] = feedback.get("intervention_type")
     user["last_run_id"] = feedback.get("run_id")
 
+    # new tracing fields
+    user["last_event_id"] = feedback.get("event_id")
+    user["last_bridge_sent_ts_ms"] = feedback.get("bridge_sent_ts_ms")
+    user["last_bridge_feedback_received_ts_ms"] = feedback.get("bridge_feedback_received_ts_ms")
+    user["last_unity_received_ts_ms"] = feedback.get("unity_received_ts_ms")
+    user["last_unity_rendered_ts_ms"] = feedback.get("unity_rendered_ts_ms")
+    user["last_unity_render_ms"] = feedback.get("unity_render_ms")
+    user["last_bridge_roundtrip_ms"] = feedback.get("bridge_roundtrip_ms")
+
     if action == "intervention_dismissed":
         user["cooldown_until_ms"] = now_ms + COOLDOWN_AFTER_DISMISS_SEC * 1000
     elif action == "intervention_completed":
         user["cooldown_until_ms"] = now_ms + COOLDOWN_AFTER_COMPLETE_SEC * 1000
     elif action == "intervention_started":
-        # started 先不单独 cooldown，只记录
         user.setdefault("cooldown_until_ms", 0)
 
     print(
-        f"[fsm] user_id={user_id} action={action} cooldown_until_ms={user.get('cooldown_until_ms', 0)}",
+        f"[fsm] user_id={user_id} event_id={user.get('last_event_id')} "
+        f"action={action} unity_render_ms={user.get('last_unity_render_ms')} "
+        f"bridge_roundtrip_ms={user.get('last_bridge_roundtrip_ms')} "
+        f"cooldown_until_ms={user.get('cooldown_until_ms', 0)}",
         flush=True,
     )
-
 
 def main():
     load_state()

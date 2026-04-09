@@ -1,12 +1,19 @@
 {
   "users": {
     "user_1": {
-      "last_feedback_action": "intervention_completed",
-      "last_feedback_ts_ms": 1775501218019,
-      "last_intervention_ts_ms": 1775501187851,
-      "last_intervention_type": "stress_regulation",
-      "last_run_id": "unity1",
-      "cooldown_until_ms": 1775501398336
+      "last_feedback_action": "intervention_rendered",
+      "last_feedback_ts_ms": 1775747730360,
+      "last_intervention_ts_ms": 1775747730518,
+      "last_intervention_type": "craving_coping, stress_regulation",
+      "last_run_id": "unity_test",
+      "cooldown_until_ms": 1775742216710,
+      "last_event_id": "f8eb5fb9-60ac-4918-b096-5824061a7863",
+      "last_bridge_sent_ts_ms": 1775747730539,
+      "last_bridge_feedback_received_ts_ms": 1775747730573,
+      "last_unity_received_ts_ms": 1775747730357,
+      "last_unity_rendered_ts_ms": 1775747730360,
+      "last_unity_render_ms": 3,
+      "last_bridge_roundtrip_ms": 34
     }
   }
 }

@@ -5,6 +5,7 @@ import os
 import signal
 import threading
 import time
+import uuid
 from typing import Set
 
 from kafka import KafkaConsumer, KafkaProducer
@@ -24,6 +25,10 @@ WS_PORT = int(os.getenv("WS_PORT", "8765"))
 clients: Set = set()
 loop = None
 producer = None
+
+
+def now_ms() -> int:
+    return int(time.time() * 1000)
 
 
 def build_consumer_with_retry(*args, retries: int = 60, sleep_sec: float = 2.0, **kwargs):
@@ -50,17 +55,37 @@ def build_producer_with_retry(retries: int = 60, sleep_sec: float = 2.0, **kwarg
     raise last
 
 
-async def broadcast_json(payload: str):
+async def broadcast_obj(evt: dict):
+    """
+    Stamp the event at the bridge immediately before websocket send.
+    This timestamp is the backend-side send baseline for Unity delivery.
+    """
+    if "event_id" not in evt or not evt["event_id"]:
+        evt["event_id"] = str(uuid.uuid4())
+
+    evt["bridge_sent_ts_ms"] = now_ms()
+    payload = json.dumps(evt, ensure_ascii=False)
+
     dead = []
+    delivered = 0
+
     for ws in list(clients):
         try:
             await ws.send(payload)
+            delivered += 1
         except Exception as e:
             print(f"[bridge] send error: {e!r}", flush=True)
             dead.append(ws)
 
     for ws in dead:
         clients.discard(ws)
+
+    print(
+        f"[bridge] broadcast event_id={evt.get('event_id')} user_id={evt.get('user_id')} "
+        f"action={evt.get('action')} urgency={evt.get('urgency')} "
+        f"bridge_sent_ts_ms={evt.get('bridge_sent_ts_ms')} clients={delivered}",
+        flush=True,
+    )
 
 
 def kafka_events_worker():
@@ -85,14 +110,16 @@ def kafka_events_worker():
         for _, msgs in records.items():
             for msg in msgs:
                 try:
-                    evt = msg.value
-                    payload = json.dumps(evt, ensure_ascii=False)
+                    evt = dict(msg.value)
+
                     print(
-                        f"[bridge] forward to unity user_id={evt.get('user_id')} action={evt.get('action')} urgency={evt.get('urgency')}",
+                        f"[bridge] forward to unity user_id={evt.get('user_id')} "
+                        f"action={evt.get('action')} urgency={evt.get('urgency')}",
                         flush=True,
                     )
+
                     if loop is not None:
-                        asyncio.run_coroutine_threadsafe(broadcast_json(payload), loop)
+                        asyncio.run_coroutine_threadsafe(broadcast_obj(evt), loop)
                 except Exception as e:
                     print(f"[bridge] kafka_events_worker error: {e!r}", flush=True)
 
@@ -109,10 +136,26 @@ async def ws_handler(websocket):
                 msg_type = obj.get("type")
 
                 if msg_type == "intervention_feedback":
+                    bridge_feedback_received_ts_ms = now_ms()
+                    obj["bridge_feedback_received_ts_ms"] = bridge_feedback_received_ts_ms
+
+                    bridge_sent_ts_ms = obj.get("bridge_sent_ts_ms", 0)
+                    if bridge_sent_ts_ms:
+                        obj["bridge_roundtrip_ms"] = max(
+                            0, bridge_feedback_received_ts_ms - bridge_sent_ts_ms
+                        )
+                    else:
+                        obj["bridge_roundtrip_ms"] = -1
+
                     key = obj.get("user_id", "")
                     producer.send(FEEDBACK_TOPIC, key=key, value=obj).get(timeout=10)
+
                     print(
-                        f"[bridge] feedback -> kafka user_id={obj.get('user_id')} action={obj.get('action')}",
+                        f"[bridge] feedback -> kafka event_id={obj.get('event_id')} "
+                        f"user_id={obj.get('user_id')} action={obj.get('action')} "
+                        f"result={obj.get('result')} "
+                        f"unity_render_ms={obj.get('unity_render_ms')} "
+                        f"bridge_roundtrip_ms={obj.get('bridge_roundtrip_ms')}",
                         flush=True,
                     )
                 else:
