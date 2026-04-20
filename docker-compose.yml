@@ -184,7 +184,7 @@ services:
       OLLAMA_TEMPERATURE: "0.0"
 
       PROMPT_VERSION: "v5-compact-decision-only"
-      SCHEMA_VERSION: "v3"
+      SCHEMA_VERSION: "v4"
 
       PYTHONUNBUFFERED: "1"
     restart: unless-stopped
