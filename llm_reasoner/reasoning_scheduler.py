@@ -251,6 +251,27 @@ def build_rule_based_reasoning_output(semantic_event: Dict[str, Any]) -> Dict[st
         })
         return out
 
+    if semantic_type == "SUSTAINED_ELEVATED_CRAVING":
+        out.update({
+            "risk_level": "HIGH" if severity in {"HIGH", "VERY_HIGH"} else "MODERATE",
+            "urgency": 70 if severity in {"HIGH", "VERY_HIGH"} else 55,
+            "decision": "INTERVENE",
+            "intervention_type": "craving_coping",
+            "recommendations": [
+                "Use a coping strategy now to manage sustained elevated craving."
+            ],
+            "rationale": (
+                "Craving has remained elevated across consecutive windows, "
+                "indicating persistent momentary risk."
+            ),
+            "confidence": 0.9,
+            "error": None,
+            "reasoning_mode": "rule_based",
+            "reasoning_route": "rule_based",
+            "bypass_rule": "DIRECT_SUSTAINED_CRAVING_RULE",
+        })
+        return out
+
     out.update({
         "risk_level": "UNKNOWN",
         "urgency": 0,
@@ -398,13 +419,13 @@ def choose_route_with_score(evt: Dict[str, Any], score: float) -> str:
     }
 
     if semantic_type in fast_candidate_types:
-        if severity == "HIGH" and score >= 80:
+        if severity == "HIGH" and score >= 95:
             return "llm"
 
         if severity in {"MEDIUM", "HIGH"}:
             return "fast_llm"
 
-    if severity == "HIGH" and score >= 80:
+    if severity == "HIGH" and score >= 95:
         return "llm"
 
     if severity in {"MEDIUM", "HIGH"}:

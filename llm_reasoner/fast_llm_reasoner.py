@@ -109,23 +109,26 @@ def build_prompt(request_event: Dict[str, Any]) -> str:
     severity = request_event.get("severity", "")
     evidence = request_event.get("evidence", {})
 
-    craving = evidence.get("craving_score")
-    stress = evidence.get("stress_score")
-    neg = evidence.get("negative_affect_score")
-    lapse = evidence.get("recent_lapse")
+    craving = evidence.get("craving_avg")
+    stress = evidence.get("stress_avg")
+    motivation = evidence.get("motivation_avg")
+    self_efficacy = evidence.get("self_efficacy_avg")
+    receptivity = evidence.get("latest_receptivity")
 
     return (
         "Return exactly one JSON object only.\n"
-        'Schema: {"urgency": <0-100 int>, "intervention_type": "none|stress_regulation|craving_coping"}\n'
+        'Schema: {"urgency": <0-100 int>, '
+        '"intervention_type": "none|stress_regulation|craving_coping"}\n'
         "Use higher urgency for stronger or converging evidence.\n"
         "Use lower urgency for weak or ambiguous evidence.\n"
         "No markdown. No explanation.\n"
         f"semantic_type={semantic_type}\n"
         f"severity={severity}\n"
-        f"craving_score={craving}\n"
-        f"stress_score={stress}\n"
-        f"negative_affect_score={neg}\n"
-        f"recent_lapse={lapse}\n"
+        f"craving_avg={craving}\n"
+        f"stress_avg={stress}\n"
+        f"motivation_avg={motivation}\n"
+        f"self_efficacy_avg={self_efficacy}\n"
+        f"receptivity={receptivity}\n"
     )
 
 def extract_json_object(text: str) -> Dict[str, Any]:
