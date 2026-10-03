@@ -319,10 +319,14 @@ def compute_priority_score(evt: Dict[str, Any], waiting_sec: float = 0.0) -> flo
     severity = str(evt.get("severity") or "").upper()
     evidence = evt.get("evidence") or {}
 
-    craving = float(evidence.get("craving_score") or 0.0)
-    stress = float(evidence.get("stress_score") or 0.0)
-    neg = float(evidence.get("negative_affect_score") or 0.0)
-    lapse = 1.0 if evidence.get("recent_lapse") else 0.0
+    craving = float(evidence.get("craving_avg") or 0.0)
+    stress = float(evidence.get("stress_avg") or 0.0)
+
+    motivation_raw = evidence.get("motivation_avg")
+    self_efficacy_raw = evidence.get("self_efficacy_avg")
+
+    motivation = 10.0 if motivation_raw is None else float(motivation_raw)
+    self_efficacy = 10.0 if self_efficacy_raw is None else float(self_efficacy_raw)
 
     score = 0.0
 
@@ -338,6 +342,7 @@ def compute_priority_score(evt: Dict[str, Any], waiting_sec: float = 0.0) -> flo
         "COMBINED_RELAPSE_RISK": 35.0,
         "RISING_STRESS_TRAJECTORY": 18.0,
         "RISING_CRAVING_TRAJECTORY": 18.0,
+        "SUSTAINED_ELEVATED_CRAVING": 15.0,
         "ELEVATED_STRESS": 12.0,
         "ELEVATED_CRAVING": 12.0,
         "LOW_MOTIVATION": 10.0,
@@ -345,13 +350,16 @@ def compute_priority_score(evt: Dict[str, Any], waiting_sec: float = 0.0) -> flo
     }
     score += type_weight.get(semantic_type, 0.0)
 
-    evidence_strength = max(craving, stress, neg)
+    evidence_strength = max(
+        craving,
+        stress,
+        max(0.0, 10.0 - motivation),
+        max(0.0, 10.0 - self_efficacy),
+    )
+
     score += min(20.0, evidence_strength / 5.0)
 
-    if lapse:
-        score += 20.0
-
-    # aging bonus: avoid starvation
+    # Aging bonus prevents starvation of events that remain pending.
     score += min(15.0, waiting_sec * 5.0)
 
     return score
@@ -362,31 +370,26 @@ def choose_route_with_score(evt: Dict[str, Any], score: float) -> str:
     severity = str(evt.get("severity") or "").upper()
     evidence = evt.get("evidence") or {}
 
-    craving = float(evidence.get("craving_score") or 0.0)
-    stress = float(evidence.get("stress_score") or 0.0)
-    neg = float(evidence.get("negative_affect_score") or 0.0)
-    lapse = bool(evidence.get("recent_lapse"))
-
+    # routing_hint is retained as metadata but does not override
+    # scheduler-level routing decisions.
     routing_hint = str(evt.get("routing_hint") or "").strip().lower()
-    if routing_hint in {"llm", "fast_llm", "rule_based"}:
-        return routing_hint
 
-    # hard safety route
+    # Combined or very-high-risk states use the high-capacity LLM.
     if semantic_type == "COMBINED_RELAPSE_RISK" or severity == "VERY_HIGH":
         return "llm"
 
-    # stable trajectory cases stay rule-based unless evidence is unusually strong
+    # Stable temporal trajectories are handled deterministically.
     if semantic_type == "RISING_STRESS_TRAJECTORY":
-        if lapse or max(stress, neg) >= 75 or score >= 95:
-            return "llm"
         return "rule_based"
 
     if semantic_type == "RISING_CRAVING_TRAJECTORY":
-        if lapse or craving >= 75 or score >= 95:
-            return "llm"
         return "rule_based"
 
-    # borderline medium/high cases -> fast/full according to score
+    if semantic_type == "SUSTAINED_ELEVATED_CRAVING":
+        return "rule_based"
+
+    # Single-variable and motivational states use the fast LLM
+    # unless the priority score indicates a stronger condition.
     fast_candidate_types = {
         "ELEVATED_STRESS",
         "ELEVATED_CRAVING",
@@ -395,8 +398,9 @@ def choose_route_with_score(evt: Dict[str, Any], score: float) -> str:
     }
 
     if semantic_type in fast_candidate_types:
-        if score >= 85:
+        if severity == "HIGH" and score >= 80:
             return "llm"
+
         if severity in {"MEDIUM", "HIGH"}:
             return "fast_llm"
 
@@ -407,7 +411,6 @@ def choose_route_with_score(evt: Dict[str, Any], score: float) -> str:
         return "fast_llm"
 
     return "drop"
-
 
 def emit_reasoning_event(
     producer: KafkaProducer,
