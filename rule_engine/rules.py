@@ -101,20 +101,33 @@ def evaluate_rules(event: Dict[str, Any], config: Dict[str, Any], state_store) -
             )
         )
 
-    # 2) Combined high-risk state
+    # 2) Combined relapse-risk state
     if (
         craving_avg >= th["craving_high"]
         and stress_avg >= th["stress_high"]
         and motivation_avg <= th["motivation_low"]
         and self_efficacy_avg <= th["self_efficacy_low"]
     ):
-        severity = "VERY_HIGH" if (craving_avg + stress_avg) >= th["combined_high_sum"] else "HIGH"
+        combined_risk_sum = craving_avg + stress_avg
+
+        severity = (
+            "VERY_HIGH"
+            if combined_risk_sum >= th["combined_very_high_sum"]
+            else "HIGH"
+        )
+
         candidates.append(
             _candidate(
                 "COMBINED_RELAPSE_RISK",
                 severity,
                 "R1",
-                "Craving and stress are elevated while motivation and self-efficacy are low.",
+                (
+                    "Craving and stress are elevated while motivation "
+                    "and self-efficacy are low "
+                    f"(craving_avg={craving_avg:.2f}, "
+                    f"stress_avg={stress_avg:.2f}, "
+                    f"combined={combined_risk_sum:.2f})."
+                ),
             )
         )
 
