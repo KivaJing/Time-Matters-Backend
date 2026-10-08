@@ -2,6 +2,7 @@
 # reasoning_requests_observer.py
 
 import json
+import builtins
 import time
 import os
 from datetime import datetime
@@ -16,6 +17,25 @@ TARGET_RUN_ID = os.getenv("RUN_ID")
 TOP_N_USERS = int(os.getenv("TOP_N_USERS", "10"))
 
 
+
+OUTPUT_FILE = os.getenv("OUTPUT_FILE", "reasoning_requests_output.txt")
+
+
+def log(*args, **kwargs):
+    builtins.print(*args, **kwargs)
+    file_kwargs = {}
+    for key in ("sep", "end", "flush"):
+        if key in kwargs:
+            file_kwargs[key] = kwargs[key]
+    with open(OUTPUT_FILE, "a", encoding="utf-8") as f:
+        builtins.print(*args, file=f, **file_kwargs)
+
+
+def log_session_start(name):
+    with open(OUTPUT_FILE, "a", encoding="utf-8") as f:
+        builtins.print(f"\n===== {name} started at {datetime.now().isoformat(timespec='seconds')} =====", file=f)
+
+
 def percentile(data, p):
     if not data:
         return None
@@ -26,9 +46,9 @@ def percentile(data, p):
 
 def report(name, data):
     if not data:
-        print(f"{name}: n=0")
+        log(f"{name}: n=0")
         return
-    print(
+    log(
         f"{name}: n={len(data)} "
         f"mean={sum(data)/len(data):.1f}ms "
         f"p50={percentile(data, 50)}ms "
@@ -55,9 +75,10 @@ def main():
         "enable.auto.commit": True,
     })
     c.subscribe([TOPIC])
+    log_session_start(__file__)
 
-    print(f"Reasoning requests observer started. topic={TOPIC}")
-    print(f"Warmup={WARMUP_SEC}s, Measure={MEASURE_SEC}s, RUN_ID={TARGET_RUN_ID or 'ALL'}")
+    log(f"Reasoning requests observer started. topic={TOPIC}")
+    log(f"Warmup={WARMUP_SEC}s, Measure={MEASURE_SEC}s, RUN_ID={TARGET_RUN_ID or 'ALL'}")
 
     start = time.time()
     measure_start = start + WARMUP_SEC
@@ -86,7 +107,7 @@ def main():
         if msg is None:
             continue
         if msg.error():
-            print("consumer error:", msg.error())
+            log("consumer error:", msg.error())
             continue
 
         polled += 1
@@ -136,10 +157,10 @@ def main():
 
     throughput = accepted / max(MEASURE_SEC, 1)
 
-    print()
-    print(f"[{datetime.now().isoformat(timespec='seconds')}] Done. polled={polled}, accepted={accepted}")
-    print(f"throughput={throughput:.2f} reasoning_requests/sec")
-    print(f"unique_users={len(unique_users)}")
+    log()
+    log(f"[{datetime.now().isoformat(timespec='seconds')}] Done. polled={polled}, accepted={accepted}")
+    log(f"throughput={throughput:.2f} reasoning_requests/sec")
+    log(f"unique_users={len(unique_users)}")
 
     report("requests_total_from_semantic(now-semantic_engine)", total_from_semantic_ms)
     report("requests_scheduler_delay(scheduler-semantic_engine)", scheduler_delay_ms)
@@ -147,14 +168,14 @@ def main():
     report("requests_pipeline_cep_part(ksql_emit-source_last_sent_at)", pipeline_cep_part_ms)
     report("requests_pipeline_rule_part(semantic_engine-source_ksql_emit)", pipeline_rule_part_ms)
 
-    print("semantic_counts:", dict(semantic_counts.most_common()))
-    print("severity_counts:", dict(severity_counts.most_common()))
-    print("scheduler_version_counts:", dict(scheduler_version_counts.most_common()))
-    print("reasoning_route_counts:", dict(reasoning_route_counts.most_common()))
-    print(f"top_{TOP_N_USERS}_users:", dict(user_counts.most_common(TOP_N_USERS)))
+    log("semantic_counts:", dict(semantic_counts.most_common()))
+    log("severity_counts:", dict(severity_counts.most_common()))
+    log("scheduler_version_counts:", dict(scheduler_version_counts.most_common()))
+    log("reasoning_route_counts:", dict(reasoning_route_counts.most_common()))
+    log(f"top_{TOP_N_USERS}_users:", dict(user_counts.most_common(TOP_N_USERS)))
 
     if accepted == 0:
-        print("No reasoning requests observed in measurement window.")
+        log("No reasoning requests observed in measurement window.")
 
 
 if __name__ == "__main__":

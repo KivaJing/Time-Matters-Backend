@@ -2,6 +2,7 @@
 # fast_llm_observer.py
 
 import json
+import builtins
 import os
 import time
 from datetime import datetime
@@ -21,6 +22,25 @@ WARMUP_SEC = int(os.getenv("WARMUP_SEC", "10"))
 MEASURE_SEC = int(os.getenv("MEASURE_SEC", "200"))
 
 
+
+OUTPUT_FILE = os.getenv("OUTPUT_FILE", "fast_llm_reasoner_output.txt")
+
+
+def log(*args, **kwargs):
+    builtins.print(*args, **kwargs)
+    file_kwargs = {}
+    for key in ("sep", "end", "flush"):
+        if key in kwargs:
+            file_kwargs[key] = kwargs[key]
+    with open(OUTPUT_FILE, "a", encoding="utf-8") as f:
+        builtins.print(*args, file=f, **file_kwargs)
+
+
+def log_session_start(name):
+    with open(OUTPUT_FILE, "a", encoding="utf-8") as f:
+        builtins.print(f"\n===== {name} started at {datetime.now().isoformat(timespec='seconds')} =====", file=f)
+
+
 def build_consumer_with_retry(*args, retries: int = 60, sleep_sec: float = 2.0, **kwargs) -> KafkaConsumer:
     last = None
     for i in range(retries):
@@ -28,7 +48,7 @@ def build_consumer_with_retry(*args, retries: int = 60, sleep_sec: float = 2.0, 
             return KafkaConsumer(*args, **kwargs)
         except NoBrokersAvailable as e:
             last = e
-            print(f"[fast_llm_observer] Kafka consumer: no broker ({i+1}/{retries}), retry in {sleep_sec}s...", flush=True)
+            log(f"[fast_llm_observer] Kafka consumer: no broker ({i+1}/{retries}), retry in {sleep_sec}s...", flush=True)
             time.sleep(sleep_sec)
     raise last
 
@@ -83,8 +103,8 @@ def main():
         consumer_timeout_ms=1000,
     )
 
-    print(f"Fast LLM observer started. topic={TOPIC}", flush=True)
-    print(f"Warmup={WARMUP_SEC}s, Measure={MEASURE_SEC}s, RUN_ID={RUN_ID_FILTER or '*'}", flush=True)
+    log(f"Fast LLM observer started. topic={TOPIC}", flush=True)
+    log(f"Warmup={WARMUP_SEC}s, Measure={MEASURE_SEC}s, RUN_ID={RUN_ID_FILTER or '*'}", flush=True)
 
     start_ts = time.time()
     warmup_end = start_ts + WARMUP_SEC
@@ -199,28 +219,28 @@ def main():
     elapsed = max(1e-9, MEASURE_SEC)
     throughput = accepted / elapsed
 
-    print("", flush=True)
-    print(f"throughput={throughput:.2f} fast_reasoning_events/sec", flush=True)
-    print(f"unique_users={len(unique_users)}", flush=True)
+    log("", flush=True)
+    log(f"throughput={throughput:.2f} fast_reasoning_events/sec", flush=True)
+    log(f"unique_users={len(unique_users)}", flush=True)
 
-    print(fmt_stats("fast_llm_total(now-scheduler)", fast_total_ms), flush=True)
-    print(fmt_stats("fast_llm_model_part(reasoning-scheduler)".replace("reasoning-scheduler", "llm_latency_reported"), fast_model_ms), flush=True)
-    print(fmt_stats("fast_llm_transport(now-reasoning)", fast_transport_ms), flush=True)
+    log(fmt_stats("fast_llm_total(now-scheduler)", fast_total_ms), flush=True)
+    log(fmt_stats("fast_llm_model_part(reasoning-scheduler)".replace("reasoning-scheduler", "llm_latency_reported"), fast_model_ms), flush=True)
+    log(fmt_stats("fast_llm_transport(now-reasoning)", fast_transport_ms), flush=True)
 
-    print(fmt_stats("fast_pipeline_cep_part(ksql_emit-source_last_sent_at)", pipeline_cep_ms), flush=True)
-    print(fmt_stats("fast_pipeline_rule_part(semantic_engine-source_ksql_emit)", pipeline_rule_ms), flush=True)
-    print(fmt_stats("fast_pipeline_scheduler_part(scheduler-semantic_engine)", pipeline_scheduler_ms), flush=True)
-    print(fmt_stats("fast_pipeline_llm_part(reasoning-scheduler)", pipeline_fast_llm_ms), flush=True)
-    print(fmt_stats("fast_pipeline_total(now-source_last_sent_at)", pipeline_total_ms), flush=True)
+    log(fmt_stats("fast_pipeline_cep_part(ksql_emit-source_last_sent_at)", pipeline_cep_ms), flush=True)
+    log(fmt_stats("fast_pipeline_rule_part(semantic_engine-source_ksql_emit)", pipeline_rule_ms), flush=True)
+    log(fmt_stats("fast_pipeline_scheduler_part(scheduler-semantic_engine)", pipeline_scheduler_ms), flush=True)
+    log(fmt_stats("fast_pipeline_llm_part(reasoning-scheduler)", pipeline_fast_llm_ms), flush=True)
+    log(fmt_stats("fast_pipeline_total(now-source_last_sent_at)", pipeline_total_ms), flush=True)
 
-    print(f"semantic_counts: {dict(semantic_counts)}", flush=True)
-    print(f"severity_counts: {dict(severity_counts)}", flush=True)
-    print(f"decision_counts: {dict(decision_counts)}", flush=True)
-    print(f"reasoning_route_counts: {dict(route_counts)}", flush=True)
-    print(f"reasoning_mode_counts: {dict(mode_counts)}", flush=True)
-    print(f"model_counts: {dict(model_counts)}", flush=True)
-    print(f"prompt_version_counts: {dict(prompt_counts)}", flush=True)
-    print(f"top_10_users: {dict(top_users.most_common(10))}", flush=True)
+    log(f"semantic_counts: {dict(semantic_counts)}", flush=True)
+    log(f"severity_counts: {dict(severity_counts)}", flush=True)
+    log(f"decision_counts: {dict(decision_counts)}", flush=True)
+    log(f"reasoning_route_counts: {dict(route_counts)}", flush=True)
+    log(f"reasoning_mode_counts: {dict(mode_counts)}", flush=True)
+    log(f"model_counts: {dict(model_counts)}", flush=True)
+    log(f"prompt_version_counts: {dict(prompt_counts)}", flush=True)
+    log(f"top_10_users: {dict(top_users.most_common(10))}", flush=True)
 
 
 if __name__ == "__main__":

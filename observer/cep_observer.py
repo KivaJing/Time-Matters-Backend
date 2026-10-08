@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import builtins
 import time
 import os
 from datetime import datetime
@@ -14,6 +15,25 @@ MEASURE_SEC = int(os.getenv("MEASURE_SEC", "60"))
 TARGET_RUN_ID = os.getenv("RUN_ID")
 
 TOP_N_USERS = int(os.getenv("TOP_N_USERS", "10"))
+
+
+
+OUTPUT_FILE = os.getenv("OUTPUT_FILE", "cep_output.txt")
+
+
+def log(*args, **kwargs):
+    builtins.print(*args, **kwargs)
+    file_kwargs = {}
+    for key in ("sep", "end", "flush"):
+        if key in kwargs:
+            file_kwargs[key] = kwargs[key]
+    with open(OUTPUT_FILE, "a", encoding="utf-8") as f:
+        builtins.print(*args, file=f, **file_kwargs)
+
+
+def log_session_start(name):
+    with open(OUTPUT_FILE, "a", encoding="utf-8") as f:
+        builtins.print(f"\n===== {name} started at {datetime.now().isoformat(timespec='seconds')} =====", file=f)
 
 
 def pick(d, *keys):
@@ -47,9 +67,9 @@ def percentile(data, p):
 
 def report(name, data):
     if not data:
-        print(f"{name}: n=0")
+        log(f"{name}: n=0")
         return
-    print(
+    log(
         f"{name}: n={len(data)} "
         f"mean={sum(data)/len(data):.1f}ms "
         f"p50={percentile(data, 50)}ms "
@@ -61,9 +81,9 @@ def report(name, data):
 
 def report_num(name, data):
     if not data:
-        print(f"{name}: n=0")
+        log(f"{name}: n=0")
         return
-    print(
+    log(
         f"{name}: n={len(data)} "
         f"mean={sum(data)/len(data):.2f} "
         f"min={min(data):.2f} "
@@ -81,9 +101,10 @@ def main():
         "enable.auto.commit": True,
     })
     c.subscribe([TOPIC])
+    log_session_start(__file__)
 
-    print(f"CEP observer started. topic={TOPIC}")
-    print(f"Warmup={WARMUP_SEC}s, Measure={MEASURE_SEC}s, RUN_ID={TARGET_RUN_ID or 'ALL'}")
+    log(f"CEP observer started. topic={TOPIC}")
+    log(f"Warmup={WARMUP_SEC}s, Measure={MEASURE_SEC}s, RUN_ID={TARGET_RUN_ID or 'ALL'}")
 
     start = time.time()
     measure_start = start + WARMUP_SEC
@@ -108,7 +129,7 @@ def main():
         if msg is None:
             continue
         if msg.error():
-            print("consumer error:", msg.error())
+            log("consumer error:", msg.error())
             continue
 
         polled += 1
@@ -170,10 +191,10 @@ def main():
     elapsed = max(MEASURE_SEC, 1)
     throughput = accepted / elapsed
 
-    print()
-    print(f"[{datetime.now().isoformat(timespec='seconds')}] Done. polled={polled}, accepted={accepted}")
-    print(f"throughput={throughput:.2f} windows/sec")
-    print(f"unique_users={len(unique_users)}")
+    log()
+    log(f"[{datetime.now().isoformat(timespec='seconds')}] Done. polled={polled}, accepted={accepted}")
+    log(f"throughput={throughput:.2f} windows/sec")
+    log(f"unique_users={len(unique_users)}")
 
     report("cep_total(now-last_sent_at)", e2e_total_ms)
     report("cep_ksql_part(emit-last_sent_at)", ksql_part_ms)
@@ -181,12 +202,12 @@ def main():
     report("cep_ksql_reported_latency_ms", ksql_reported_latency_ms)
     report_num("event_count_per_window", event_count_per_window)
 
-    print("scenario_counts:", dict(scenario_counts.most_common()))
-    print("run_counts:", dict(run_counts.most_common()))
-    print(f"top_{TOP_N_USERS}_users:", dict(user_counts.most_common(TOP_N_USERS)))
+    log("scenario_counts:", dict(scenario_counts.most_common()))
+    log("run_counts:", dict(run_counts.most_common()))
+    log(f"top_{TOP_N_USERS}_users:", dict(user_counts.most_common(TOP_N_USERS)))
 
     if accepted == 0:
-        print("No CEP outputs observed in measurement window.")
+        log("No CEP outputs observed in measurement window.")
 
 
 if __name__ == "__main__":

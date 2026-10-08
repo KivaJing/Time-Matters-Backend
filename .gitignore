@@ -8,3 +8,7 @@ __pycache__/
 .DS_Store
 .idea/
 .vscode/
+
+# Generated experiment artifacts
+/runs/
+/*_output.txt
