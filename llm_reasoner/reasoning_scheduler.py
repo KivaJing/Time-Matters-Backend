@@ -742,6 +742,11 @@ def main():
     recent_llm_enqueues: deque = deque()
     recent_fast_llm_enqueues: deque = deque()
 
+    queue_metrics_interval_sec = float(
+        os.getenv("QUEUE_METRICS_INTERVAL_SEC", "1.0")
+    )
+    last_queue_metrics_ts = 0.0
+
     print(
         f"[reasoning_scheduler] started bootstrap={BOOTSTRAP} "
         f"consuming={IN_TOPIC} request_topic={OUT_REQUEST_TOPIC} "
@@ -767,6 +772,28 @@ def main():
                 recent_llm_enqueues=recent_llm_enqueues,
                 recent_fast_llm_enqueues=recent_fast_llm_enqueues,
             )
+
+            now_metrics = time.time()
+            if now_metrics - last_queue_metrics_ts >= queue_metrics_interval_sec:
+                pending_total = len(pending_coalesce)
+                pending_users = len({
+                    str(v["semantic_event"].get("user_id"))
+                    for v in pending_coalesce.values()
+                })
+                ready_pending = sum(
+                    1 for v in pending_coalesce.values()
+                    if v["flush_at"] <= now_metrics
+                )
+
+                print(
+                    f"[reasoning_scheduler] queue_metrics "
+                    f"ts_ms={int(now_metrics * 1000)} "
+                    f"pending_total={pending_total} "
+                    f"pending_users={pending_users} "
+                    f"ready_pending={ready_pending}",
+                    flush=True,
+                )
+                last_queue_metrics_ts = now_metrics
 
             records = consumer.poll(timeout_ms=500, max_records=200)
             if not records:

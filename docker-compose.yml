@@ -107,6 +107,7 @@ services:
       OUTPUT_TOPIC: semantic_events
       GROUP_ID: rule-engine-v2
       EMIT_SAME_STATE_AFTER_SEC: "30"
+      EMIT_ALL_MATCHED_WINDOWS: "${EMIT_ALL_MATCHED_WINDOWS:-false}"
       PYTHONUNBUFFERED: "1"
     restart: unless-stopped
 

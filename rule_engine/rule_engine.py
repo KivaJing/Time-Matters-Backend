@@ -122,6 +122,11 @@ def main():
         )
     )
 
+    emit_all_matched_windows = (
+        os.getenv("EMIT_ALL_MATCHED_WINDOWS", "false").strip().lower()
+        in {"1", "true", "yes", "on"}
+    )
+
     consumer = build_consumer_with_retry(
         in_topic,
         bootstrap_servers=bootstrap,
@@ -148,7 +153,8 @@ def main():
     print(
         "[rule_engine] started"
         f" bootstrap={bootstrap} consuming={in_topic} producing={out_topic} group_id={group_id}"
-        f" emit_same_state_after_sec={emit_same_state_after_sec}",
+        f" emit_same_state_after_sec={emit_same_state_after_sec}"
+        f" emit_all_matched_windows={emit_all_matched_windows}",
         flush=True,
     )
 
@@ -199,12 +205,15 @@ def main():
                         sem_type = str(rule_result["semantic_type"])
                         severity = str(rule_result["severity"])
 
-                        if not state.should_emit_on_state_change(
-                            run_id=run_id,
-                            user_id=user_id,
-                            semantic_type=sem_type,
-                            severity=severity,
-                            max_same_state_silence_sec=emit_same_state_after_sec,
+                        if (
+                            not emit_all_matched_windows
+                            and not state.should_emit_on_state_change(
+                                run_id=run_id,
+                                user_id=user_id,
+                                semantic_type=sem_type,
+                                severity=severity,
+                                max_same_state_silence_sec=emit_same_state_after_sec,
+                            )
                         ):
                             processed_count += 1
                             continue
