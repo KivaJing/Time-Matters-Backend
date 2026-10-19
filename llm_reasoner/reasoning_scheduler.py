@@ -40,6 +40,18 @@ MAX_FAST_LLM_REQUESTS_PER_SEC = float(os.getenv("MAX_FAST_LLM_REQUESTS_PER_SEC",
 
 SCHEDULER_VERSION = os.getenv("SCHEDULER_VERSION", "v4_scored")
 
+FORCE_ROUTE = os.getenv("FORCE_ROUTE", "").strip().lower()
+DISABLE_LOAD_CONTROL = (
+    os.getenv("DISABLE_LOAD_CONTROL", "false").strip().lower() == "true"
+)
+
+VALID_FORCE_ROUTES = {"", "rule_based", "fast_llm", "llm"}
+
+if FORCE_ROUTE not in VALID_FORCE_ROUTES:
+    raise ValueError(
+        f"Invalid FORCE_ROUTE={FORCE_ROUTE!r}; "
+        f"expected one of {sorted(VALID_FORCE_ROUTES)}"
+    )
 
 def build_consumer_with_retry(*args, retries: int = 60, sleep_sec: float = 2.0, **kwargs) -> KafkaConsumer:
     last = None
@@ -150,6 +162,9 @@ def pending_count_for_user(
 
 
 def user_in_cooldown(user_id: str, last_enqueued_by_user: Dict[str, float]) -> bool:
+    if DISABLE_LOAD_CONTROL:
+        return False
+
     if not ENABLE_USER_COOLDOWN:
         return False
 
@@ -159,8 +174,10 @@ def user_in_cooldown(user_id: str, last_enqueued_by_user: Dict[str, float]) -> b
 
     return (time.time() - last_ts) < USER_COOLDOWN_SEC
 
-
 def admission_allowed(recent_enqueues: deque, max_rate_per_sec: float) -> bool:
+    if DISABLE_LOAD_CONTROL:
+        return True
+
     now = time.time()
     while recent_enqueues and (now - recent_enqueues[0]) > 1.0:
         recent_enqueues.popleft()
@@ -272,6 +289,74 @@ def build_rule_based_reasoning_output(semantic_event: Dict[str, Any]) -> Dict[st
         })
         return out
 
+    # The mappings below are used by the rule-only experimental baseline.
+    # They do not alter the default full-hybrid routing policy.
+    if semantic_type == "COMBINED_RELAPSE_RISK":
+        out.update({
+            "risk_level": "VERY_HIGH" if severity == "VERY_HIGH" else "HIGH",
+            "urgency": 90 if severity == "VERY_HIGH" else 80,
+            "decision": "INTERVENE",
+            "intervention_type": "craving_coping, stress_regulation",
+            "recommendations": [],
+            "rationale": "Deterministic rule-only baseline for combined relapse risk.",
+            "confidence": 1.0,
+            "error": None,
+            "reasoning_mode": "rule_based",
+            "reasoning_route": "rule_based",
+            "bypass_rule": "BASELINE_COMBINED_RISK_RULE",
+        })
+        return out
+
+    if semantic_type == "ELEVATED_STRESS":
+        high = severity in {"HIGH", "VERY_HIGH"}
+        out.update({
+            "risk_level": "HIGH" if high else "MODERATE",
+            "urgency": 65 if high else 45,
+            "decision": "INTERVENE" if high else "MONITOR",
+            "intervention_type": "stress_regulation" if high else "none",
+            "recommendations": [],
+            "rationale": "Deterministic rule-only baseline for elevated stress.",
+            "confidence": 1.0,
+            "error": None,
+            "reasoning_mode": "rule_based",
+            "reasoning_route": "rule_based",
+            "bypass_rule": "BASELINE_ELEVATED_STRESS_RULE",
+        })
+        return out
+
+    if semantic_type == "ELEVATED_CRAVING":
+        high = severity in {"HIGH", "VERY_HIGH"}
+        out.update({
+            "risk_level": "HIGH" if high else "MODERATE",
+            "urgency": 65 if high else 45,
+            "decision": "INTERVENE" if high else "MONITOR",
+            "intervention_type": "craving_coping" if high else "none",
+            "recommendations": [],
+            "rationale": "Deterministic rule-only baseline for elevated craving.",
+            "confidence": 1.0,
+            "error": None,
+            "reasoning_mode": "rule_based",
+            "reasoning_route": "rule_based",
+            "bypass_rule": "BASELINE_ELEVATED_CRAVING_RULE",
+        })
+        return out
+
+    if semantic_type in {"LOW_MOTIVATION", "LOW_SELF_EFFICACY"}:
+        out.update({
+            "risk_level": "HIGH" if severity in {"HIGH", "VERY_HIGH"} else "MODERATE",
+            "urgency": 55 if severity in {"HIGH", "VERY_HIGH"} else 40,
+            "decision": "MONITOR",
+            "intervention_type": "none",
+            "recommendations": [],
+            "rationale": f"Deterministic rule-only baseline for {semantic_type.lower()}.",
+            "confidence": 1.0,
+            "error": None,
+            "reasoning_mode": "rule_based",
+            "reasoning_route": "rule_based",
+            "bypass_rule": "BASELINE_MOTIVATIONAL_RULE",
+        })
+        return out
+
     out.update({
         "risk_level": "UNKNOWN",
         "urgency": 0,
@@ -286,7 +371,6 @@ def build_rule_based_reasoning_output(semantic_event: Dict[str, Any]) -> Dict[st
         "bypass_rule": "DEFAULT_RULE_BASED",
     })
     return out
-
 
 def build_request_payload(semantic_event: Dict[str, Any], route: str) -> Dict[str, Any]:
     now_ms = int(time.time() * 1000)
@@ -320,6 +404,10 @@ def should_drop_by_priority(
     semantic_event: Dict[str, Any],
     pending_coalesce: Dict[Tuple[str, str, str, str], Dict[str, Any]],
 ) -> Tuple[bool, str | None]:
+
+    if DISABLE_LOAD_CONTROL:
+        return False, None
+
     if not ENABLE_PRIORITY_FILTER:
         return False, None
 
@@ -389,6 +477,8 @@ def compute_priority_score(evt: Dict[str, Any], waiting_sec: float = 0.0) -> flo
 def choose_route_with_score(evt: Dict[str, Any], score: float) -> str:
     semantic_type = str(evt.get("semantic_type") or "")
     severity = str(evt.get("severity") or "").upper()
+    if FORCE_ROUTE:
+        return FORCE_ROUTE
     evidence = evt.get("evidence") or {}
 
     # routing_hint is retained as metadata but does not override
@@ -658,9 +748,12 @@ def main():
         f"fast_request_topic={OUT_FAST_REQUEST_TOPIC} reasoning_topic={OUT_REASONING_TOPIC} "
         f"dropped_topic={OUT_DROPPED_TOPIC} coalesce_sec={COALESCE_SEC} "
         f"max_pending={MAX_PENDING} user_cooldown_enabled={ENABLE_USER_COOLDOWN} "
-        f"user_cooldown_sec={USER_COOLDOWN_SEC} max_llm_requests_per_sec={MAX_LLM_REQUESTS_PER_SEC} "
+        f"user_cooldown_sec={USER_COOLDOWN_SEC} "
+        f"max_llm_requests_per_sec={MAX_LLM_REQUESTS_PER_SEC} "
         f"max_fast_llm_requests_per_sec={MAX_FAST_LLM_REQUESTS_PER_SEC} "
-        f"scheduler_version={SCHEDULER_VERSION}",
+        f"scheduler_version={SCHEDULER_VERSION} "
+        f"force_route={FORCE_ROUTE or 'hybrid'} "
+        f"disable_load_control={DISABLE_LOAD_CONTROL}",
         flush=True,
     )
 
@@ -703,6 +796,35 @@ def main():
                     bypass = build_bypass_output(semantic_event)
                     if bypass is not None:
                         emit_reasoning_event(producer, tracker, entry, bypass, tag="bypass_rule")
+                        continue
+
+                    if DISABLE_LOAD_CONTROL:
+                        score = compute_priority_score(
+                            semantic_event,
+                            waiting_sec=0.0,
+                        )
+                        route = choose_route_with_score(
+                            semantic_event,
+                            score,
+                        )
+
+                        _send_to_route(
+                            route=route,
+                            producer=producer,
+                            tracker=tracker,
+                            entry=entry,
+                            last_enqueued_by_user=last_enqueued_by_user,
+                            recent_llm_enqueues=recent_llm_enqueues,
+                            recent_fast_llm_enqueues=recent_fast_llm_enqueues,
+                        )
+
+                        print(
+                            f"[reasoning_scheduler] no_load_control "
+                            f"user_id={semantic_event.get('user_id')} "
+                            f"semantic_type={semantic_event.get('semantic_type')} "
+                            f"route={route}",
+                            flush=True,
+                        )
                         continue
 
                     should_drop, reason = should_drop_by_priority(semantic_event, pending_coalesce)

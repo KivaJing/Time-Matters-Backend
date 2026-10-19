@@ -15,7 +15,8 @@ MEASURE_SEC=200
 SIM_DURATION_SEC=$((WARMUP_SEC + MEASURE_SEC))
 COOLDOWN_SEC=20
 
-RUN_ID="scaling_u${N_USERS}_r${RUN_NO}"
+RUN_PREFIX="${RUN_PREFIX:-scaling}"
+RUN_ID="${RUN_PREFIX}_u${N_USERS}_r${RUN_NO}"
 OUT_DIR="$ROOT/runs/$RUN_ID"
 
 mkdir -p "$OUT_DIR"
@@ -45,10 +46,16 @@ docker compose ps > "$OUT_DIR/docker-compose-ps-before.txt"
 
 docker compose restart \
   rule_engine \
-  reasoning_scheduler \
   llm_reasoner \
   fast_llm_reasoner \
   intervention_engine
+
+# Recreate the scheduler so FORCE_ROUTE / DISABLE_LOAD_CONTROL
+# from this shell are applied to the container environment.
+docker compose up -d \
+  --no-deps \
+  --force-recreate \
+  reasoning_scheduler
 
 sleep 5
 

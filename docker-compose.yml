@@ -127,7 +127,8 @@ services:
       OUT_DROPPED_TOPIC: reasoning_dropped_events
       OUT_FAST_REQUEST_TOPIC: fast_reasoning_requests
       GROUP_ID: reasoning-scheduler-v2
-
+      FORCE_ROUTE: "${FORCE_ROUTE:-}"
+      DISABLE_LOAD_CONTROL: "${DISABLE_LOAD_CONTROL:-false}"
       COALESCE_SEC: 0.1
       MAX_PENDING: 256
       MAX_PENDING_PER_USER: 5

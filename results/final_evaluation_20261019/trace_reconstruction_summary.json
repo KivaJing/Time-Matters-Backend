@@ -1,0 +1,52 @@
+{
+  "input_counts": {
+    "semantic_events": 925,
+    "high_reasoning_requests": 30,
+    "fast_reasoning_requests": 75,
+    "total_reasoning_requests": 105,
+    "reasoning_events": 105,
+    "reasoning_dropped_events": 355,
+    "intervention_events": 105
+  },
+  "index_build_ms": 0.2465,
+  "intervention_trace": {
+    "n": 105,
+    "reconstruction_success": 105,
+    "reconstruction_success_rate": 1.0,
+    "consistent_trace_count": 105,
+    "consistent_trace_rate": 1.0,
+    "complete_provenance_count": 105,
+    "complete_provenance_rate": 1.0,
+    "endpoint_linkage_fields_complete_count": 105,
+    "endpoint_linkage_fields_complete_rate": 1.0,
+    "failure_reasons": {},
+    "lookup_repeats": 500,
+    "offline_indexed_lookup_mean_us": 0.6963444,
+    "offline_indexed_lookup_median_us": 0.6926619047619047,
+    "offline_indexed_lookup_p95_us": 0.7155238095238096,
+    "offline_indexed_lookup_p99_us": 0.7544761904761905,
+    "offline_indexed_lookup_max_us": 0.956952380952381
+  },
+  "schema_propagation": {
+    "request_id_present_in_intervention_count": 0,
+    "request_id_present_in_intervention_rate": 0.0,
+    "semantic_type_present_in_intervention_count": 0,
+    "semantic_type_present_in_intervention_rate": 0.0,
+    "note": "Intervention events are linked to reasoning events through preserved run/user/window and processing timestamps rather than direct request_id propagation."
+  },
+  "explicit_drop_trace": {
+    "n": 355,
+    "semantic_match_count": 39,
+    "semantic_match_rate": 0.10985915492957747,
+    "complete_drop_metadata_count": 355,
+    "complete_drop_metadata_rate": 1.0
+  },
+  "coalesced": {
+    "inferred_from_conservation": 465,
+    "direct_rule_reasoning_events": 0,
+    "dedicated_structured_coalescing_records": 0,
+    "conservation_ok": true,
+    "equation": "semantic_events = explicit_drops + reasoning_requests + direct_rule_reasoning + inferred_coalesced",
+    "note": "The semantic-replay archive contains no dedicated structured coalescing event stream; coalesced replacements are therefore inferred from conservation."
+  }
+}

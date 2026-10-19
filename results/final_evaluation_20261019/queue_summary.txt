@@ -1,0 +1,17 @@
+Scheduler pending/coalescing buffer telemetry
+Sampling interval: approximately 1 s
+
+100 users
+r1: n=214 nonzero=1.87% p99=20 max=25 conditional_mean=22.00 gt10=1.87%
+r2: n=214 nonzero=1.87% p99=21 max=23 conditional_mean=18.25 gt10=1.40%
+r3: n=214 nonzero=1.87% p99=19 max=27 conditional_mean=20.75 gt10=1.87%
+Across runs: mean pending occupancy=0.38, maximum observed=27
+
+200 users
+r1: n=208 nonzero=0.96% p99=0 max=84 conditional_mean=70.50 gt10=0.96%
+r2: n=209 nonzero=0.96% p99=0 max=129 conditional_mean=88.50 gt10=0.96%
+r3: n=210 nonzero=1.43% p99=3 max=115 conditional_mean=60.00 gt10=0.95%
+Across runs: mean pending occupancy=0.79, maximum observed=129
+
+Interpretation:
+The scheduler exhibited short-lived burst accumulation rather than persistent queue saturation.

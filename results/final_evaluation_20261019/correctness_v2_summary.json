@@ -1,0 +1,678 @@
+{
+  "method": {
+    "seeds": [
+      101,
+      202,
+      303
+    ],
+    "cases_per_class_per_seed": 50,
+    "target_labels": [
+      "NONE",
+      "RISING_STRESS_TRAJECTORY",
+      "RISING_CRAVING_TRAJECTORY",
+      "COMBINED_RELAPSE_RISK"
+    ],
+    "bootstrap_reps": 2000,
+    "base_thresholds": {
+      "craving_high": 7.0,
+      "craving_very_high": 8.5,
+      "stress_high": 7.0,
+      "stress_very_high": 8.5,
+      "motivation_low": 3.0,
+      "motivation_very_low": 2.0,
+      "self_efficacy_low": 3.0,
+      "self_efficacy_very_low": 2.0,
+      "combined_very_high_sum": 17.0
+    }
+  },
+  "conditions": {
+    "clean": {
+      "metrics": {
+        "n": 600,
+        "accuracy": 1.0,
+        "balanced_accuracy": 1.0,
+        "macro_precision": 1.0,
+        "macro_recall": 1.0,
+        "macro_f1": 1.0,
+        "baseline_false_positive_rate": 0.0,
+        "per_class": {
+          "NONE": {
+            "tp": 150,
+            "fp": 0,
+            "fn": 0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0
+          },
+          "RISING_STRESS_TRAJECTORY": {
+            "tp": 150,
+            "fp": 0,
+            "fn": 0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0
+          },
+          "RISING_CRAVING_TRAJECTORY": {
+            "tp": 150,
+            "fp": 0,
+            "fn": 0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0
+          },
+          "COMBINED_RELAPSE_RISK": {
+            "tp": 150,
+            "fp": 0,
+            "fn": 0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0
+          }
+        }
+      },
+      "bootstrap_95ci": {
+        "accuracy": {
+          "low": 1.0,
+          "high": 1.0
+        },
+        "balanced_accuracy": {
+          "low": 1.0,
+          "high": 1.0
+        },
+        "macro_f1": {
+          "low": 1.0,
+          "high": 1.0
+        },
+        "baseline_false_positive_rate": {
+          "low": 0.0,
+          "high": 0.0
+        },
+        "per_class_f1": {
+          "NONE": {
+            "low": 1.0,
+            "high": 1.0
+          },
+          "RISING_STRESS_TRAJECTORY": {
+            "low": 1.0,
+            "high": 1.0
+          },
+          "RISING_CRAVING_TRAJECTORY": {
+            "low": 1.0,
+            "high": 1.0
+          },
+          "COMBINED_RELAPSE_RISK": {
+            "low": 1.0,
+            "high": 1.0
+          }
+        }
+      },
+      "thresholds": {
+        "craving_high": 7.0,
+        "craving_very_high": 8.5,
+        "stress_high": 7.0,
+        "stress_very_high": 8.5,
+        "motivation_low": 3.0,
+        "motivation_very_low": 2.0,
+        "self_efficacy_low": 3.0,
+        "self_efficacy_very_low": 2.0,
+        "combined_very_high_sum": 17.0
+      }
+    },
+    "noise_sd_0.35": {
+      "metrics": {
+        "n": 600,
+        "accuracy": 0.8583333333333333,
+        "balanced_accuracy": 0.8583333333333334,
+        "macro_precision": 0.9054240216522845,
+        "macro_recall": 0.8583333333333334,
+        "macro_f1": 0.8657099542356131,
+        "baseline_false_positive_rate": 0.0,
+        "per_class": {
+          "NONE": {
+            "tp": 150,
+            "fp": 73,
+            "fn": 0,
+            "precision": 0.672645739910314,
+            "recall": 1.0,
+            "f1": 0.8042895442359249
+          },
+          "RISING_STRESS_TRAJECTORY": {
+            "tp": 120,
+            "fp": 4,
+            "fn": 30,
+            "precision": 0.967741935483871,
+            "recall": 0.8,
+            "f1": 0.8759124087591241
+          },
+          "RISING_CRAVING_TRAJECTORY": {
+            "tp": 105,
+            "fp": 2,
+            "fn": 45,
+            "precision": 0.9813084112149533,
+            "recall": 0.7,
+            "f1": 0.8171206225680933
+          },
+          "COMBINED_RELAPSE_RISK": {
+            "tp": 140,
+            "fp": 0,
+            "fn": 10,
+            "precision": 1.0,
+            "recall": 0.9333333333333333,
+            "f1": 0.9655172413793104
+          }
+        }
+      },
+      "bootstrap_95ci": {
+        "accuracy": {
+          "low": 0.83,
+          "high": 0.8866666666666667
+        },
+        "balanced_accuracy": {
+          "low": 0.8330747930845974,
+          "high": 0.8859944246518238
+        },
+        "macro_f1": {
+          "low": 0.8394617867674523,
+          "high": 0.8923180678627787
+        },
+        "baseline_false_positive_rate": {
+          "low": 0.0,
+          "high": 0.0
+        },
+        "per_class_f1": {
+          "NONE": {
+            "low": 0.7613178116379876,
+            "high": 0.8473684210526315
+          },
+          "RISING_STRESS_TRAJECTORY": {
+            "low": 0.8347091169388949,
+            "high": 0.9142857142857143
+          },
+          "RISING_CRAVING_TRAJECTORY": {
+            "low": 0.7654267310789049,
+            "high": 0.8673876664530371
+          },
+          "COMBINED_RELAPSE_RISK": {
+            "low": 0.9420289855072463,
+            "high": 0.9852518219677251
+          }
+        }
+      },
+      "thresholds": {
+        "craving_high": 7.0,
+        "craving_very_high": 8.5,
+        "stress_high": 7.0,
+        "stress_very_high": 8.5,
+        "motivation_low": 3.0,
+        "motivation_very_low": 2.0,
+        "self_efficacy_low": 3.0,
+        "self_efficacy_very_low": 2.0,
+        "combined_very_high_sum": 17.0
+      }
+    },
+    "missing_one_of_five_windows": {
+      "metrics": {
+        "n": 600,
+        "accuracy": 1.0,
+        "balanced_accuracy": 1.0,
+        "macro_precision": 1.0,
+        "macro_recall": 1.0,
+        "macro_f1": 1.0,
+        "baseline_false_positive_rate": 0.0,
+        "per_class": {
+          "NONE": {
+            "tp": 150,
+            "fp": 0,
+            "fn": 0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0
+          },
+          "RISING_STRESS_TRAJECTORY": {
+            "tp": 150,
+            "fp": 0,
+            "fn": 0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0
+          },
+          "RISING_CRAVING_TRAJECTORY": {
+            "tp": 150,
+            "fp": 0,
+            "fn": 0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0
+          },
+          "COMBINED_RELAPSE_RISK": {
+            "tp": 150,
+            "fp": 0,
+            "fn": 0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0
+          }
+        }
+      },
+      "bootstrap_95ci": {
+        "accuracy": {
+          "low": 1.0,
+          "high": 1.0
+        },
+        "balanced_accuracy": {
+          "low": 1.0,
+          "high": 1.0
+        },
+        "macro_f1": {
+          "low": 1.0,
+          "high": 1.0
+        },
+        "baseline_false_positive_rate": {
+          "low": 0.0,
+          "high": 0.0
+        },
+        "per_class_f1": {
+          "NONE": {
+            "low": 1.0,
+            "high": 1.0
+          },
+          "RISING_STRESS_TRAJECTORY": {
+            "low": 1.0,
+            "high": 1.0
+          },
+          "RISING_CRAVING_TRAJECTORY": {
+            "low": 1.0,
+            "high": 1.0
+          },
+          "COMBINED_RELAPSE_RISK": {
+            "low": 1.0,
+            "high": 1.0
+          }
+        }
+      },
+      "thresholds": {
+        "craving_high": 7.0,
+        "craving_very_high": 8.5,
+        "stress_high": 7.0,
+        "stress_very_high": 8.5,
+        "motivation_low": 3.0,
+        "motivation_very_low": 2.0,
+        "self_efficacy_low": 3.0,
+        "self_efficacy_very_low": 2.0,
+        "combined_very_high_sum": 17.0
+      }
+    },
+    "delayed_adjacent_window": {
+      "metrics": {
+        "n": 600,
+        "accuracy": 0.5,
+        "balanced_accuracy": 0.5,
+        "macro_precision": 0.3372093023255814,
+        "macro_recall": 0.5,
+        "macro_f1": 0.3793103448275862,
+        "baseline_false_positive_rate": 0.0,
+        "per_class": {
+          "NONE": {
+            "tp": 150,
+            "fp": 280,
+            "fn": 0,
+            "precision": 0.3488372093023256,
+            "recall": 1.0,
+            "f1": 0.5172413793103449
+          },
+          "RISING_STRESS_TRAJECTORY": {
+            "tp": 0,
+            "fp": 0,
+            "fn": 150,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+          },
+          "RISING_CRAVING_TRAJECTORY": {
+            "tp": 0,
+            "fp": 0,
+            "fn": 150,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+          },
+          "COMBINED_RELAPSE_RISK": {
+            "tp": 150,
+            "fp": 0,
+            "fn": 0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0
+          }
+        }
+      },
+      "bootstrap_95ci": {
+        "accuracy": {
+          "low": 0.46,
+          "high": 0.5400416666666664
+        },
+        "balanced_accuracy": {
+          "low": 0.5,
+          "high": 0.5
+        },
+        "macro_f1": {
+          "low": 0.36608775137111516,
+          "high": 0.3915414198475823
+        },
+        "baseline_false_positive_rate": {
+          "low": 0.0,
+          "high": 0.0
+        },
+        "per_class_f1": {
+          "NONE": {
+            "low": 0.4643510054844607,
+            "high": 0.5661656793903292
+          },
+          "RISING_STRESS_TRAJECTORY": {
+            "low": 0.0,
+            "high": 0.0
+          },
+          "RISING_CRAVING_TRAJECTORY": {
+            "low": 0.0,
+            "high": 0.0
+          },
+          "COMBINED_RELAPSE_RISK": {
+            "low": 1.0,
+            "high": 1.0
+          }
+        }
+      },
+      "thresholds": {
+        "craving_high": 7.0,
+        "craving_very_high": 8.5,
+        "stress_high": 7.0,
+        "stress_very_high": 8.5,
+        "motivation_low": 3.0,
+        "motivation_very_low": 2.0,
+        "self_efficacy_low": 3.0,
+        "self_efficacy_very_low": 2.0,
+        "combined_very_high_sum": 17.0
+      }
+    },
+    "threshold_0.90": {
+      "metrics": {
+        "n": 600,
+        "accuracy": 0.9933333333333333,
+        "balanced_accuracy": 0.9933333333333334,
+        "macro_precision": 0.9950548971767166,
+        "macro_recall": 0.9933333333333334,
+        "macro_f1": 0.9941354276984956,
+        "baseline_false_positive_rate": 0.0,
+        "per_class": {
+          "NONE": {
+            "tp": 150,
+            "fp": 0,
+            "fn": 0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0
+          },
+          "RISING_STRESS_TRAJECTORY": {
+            "tp": 150,
+            "fp": 2,
+            "fn": 0,
+            "precision": 0.9868421052631579,
+            "recall": 1.0,
+            "f1": 0.9933774834437086
+          },
+          "RISING_CRAVING_TRAJECTORY": {
+            "tp": 150,
+            "fp": 1,
+            "fn": 0,
+            "precision": 0.9933774834437086,
+            "recall": 1.0,
+            "f1": 0.9966777408637874
+          },
+          "COMBINED_RELAPSE_RISK": {
+            "tp": 146,
+            "fp": 0,
+            "fn": 4,
+            "precision": 1.0,
+            "recall": 0.9733333333333334,
+            "f1": 0.9864864864864865
+          }
+        }
+      },
+      "bootstrap_95ci": {
+        "accuracy": {
+          "low": 0.9866666666666667,
+          "high": 0.9983333333333333
+        },
+        "balanced_accuracy": {
+          "low": 0.9864851770375026,
+          "high": 0.9984939759036144
+        },
+        "macro_f1": {
+          "low": 0.987844686211523,
+          "high": 0.9991753180172387
+        },
+        "baseline_false_positive_rate": {
+          "low": 0.0,
+          "high": 0.0
+        },
+        "per_class_f1": {
+          "NONE": {
+            "low": 1.0,
+            "high": 1.0
+          },
+          "RISING_STRESS_TRAJECTORY": {
+            "low": 0.9825753407910018,
+            "high": 1.0
+          },
+          "RISING_CRAVING_TRAJECTORY": {
+            "low": 0.9890026954177898,
+            "high": 1.0
+          },
+          "COMBINED_RELAPSE_RISK": {
+            "low": 0.9722194555112882,
+            "high": 0.9969788519637462
+          }
+        }
+      },
+      "thresholds": {
+        "craving_high": 6.3,
+        "craving_very_high": 7.65,
+        "stress_high": 6.3,
+        "stress_very_high": 7.65,
+        "motivation_low": 2.7,
+        "motivation_very_low": 1.8,
+        "self_efficacy_low": 2.7,
+        "self_efficacy_very_low": 1.8,
+        "combined_very_high_sum": 15.3
+      }
+    },
+    "threshold_1.00": {
+      "metrics": {
+        "n": 600,
+        "accuracy": 1.0,
+        "balanced_accuracy": 1.0,
+        "macro_precision": 1.0,
+        "macro_recall": 1.0,
+        "macro_f1": 1.0,
+        "baseline_false_positive_rate": 0.0,
+        "per_class": {
+          "NONE": {
+            "tp": 150,
+            "fp": 0,
+            "fn": 0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0
+          },
+          "RISING_STRESS_TRAJECTORY": {
+            "tp": 150,
+            "fp": 0,
+            "fn": 0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0
+          },
+          "RISING_CRAVING_TRAJECTORY": {
+            "tp": 150,
+            "fp": 0,
+            "fn": 0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0
+          },
+          "COMBINED_RELAPSE_RISK": {
+            "tp": 150,
+            "fp": 0,
+            "fn": 0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0
+          }
+        }
+      },
+      "bootstrap_95ci": {
+        "accuracy": {
+          "low": 1.0,
+          "high": 1.0
+        },
+        "balanced_accuracy": {
+          "low": 1.0,
+          "high": 1.0
+        },
+        "macro_f1": {
+          "low": 1.0,
+          "high": 1.0
+        },
+        "baseline_false_positive_rate": {
+          "low": 0.0,
+          "high": 0.0
+        },
+        "per_class_f1": {
+          "NONE": {
+            "low": 1.0,
+            "high": 1.0
+          },
+          "RISING_STRESS_TRAJECTORY": {
+            "low": 1.0,
+            "high": 1.0
+          },
+          "RISING_CRAVING_TRAJECTORY": {
+            "low": 1.0,
+            "high": 1.0
+          },
+          "COMBINED_RELAPSE_RISK": {
+            "low": 1.0,
+            "high": 1.0
+          }
+        }
+      },
+      "thresholds": {
+        "craving_high": 7.0,
+        "craving_very_high": 8.5,
+        "stress_high": 7.0,
+        "stress_very_high": 8.5,
+        "motivation_low": 3.0,
+        "motivation_very_low": 2.0,
+        "self_efficacy_low": 3.0,
+        "self_efficacy_very_low": 2.0,
+        "combined_very_high_sum": 17.0
+      }
+    },
+    "threshold_1.10": {
+      "metrics": {
+        "n": 600,
+        "accuracy": 0.9666666666666667,
+        "balanced_accuracy": 0.9666666666666667,
+        "macro_precision": 0.9807889870556812,
+        "macro_recall": 0.9666666666666667,
+        "macro_f1": 0.9723441707542204,
+        "baseline_false_positive_rate": 0.0,
+        "per_class": {
+          "NONE": {
+            "tp": 150,
+            "fp": 0,
+            "fn": 0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0
+          },
+          "RISING_STRESS_TRAJECTORY": {
+            "tp": 150,
+            "fp": 5,
+            "fn": 0,
+            "precision": 0.967741935483871,
+            "recall": 1.0,
+            "f1": 0.9836065573770492
+          },
+          "RISING_CRAVING_TRAJECTORY": {
+            "tp": 150,
+            "fp": 7,
+            "fn": 0,
+            "precision": 0.9554140127388535,
+            "recall": 1.0,
+            "f1": 0.9771986970684039
+          },
+          "COMBINED_RELAPSE_RISK": {
+            "tp": 130,
+            "fp": 0,
+            "fn": 20,
+            "precision": 1.0,
+            "recall": 0.8666666666666667,
+            "f1": 0.9285714285714286
+          }
+        }
+      },
+      "bootstrap_95ci": {
+        "accuracy": {
+          "low": 0.95,
+          "high": 0.98
+        },
+        "balanced_accuracy": {
+          "low": 0.9519215838509316,
+          "high": 0.9796885557432432
+        },
+        "macro_f1": {
+          "low": 0.9586180504144467,
+          "high": 0.9840017218230435
+        },
+        "baseline_false_positive_rate": {
+          "low": 0.0,
+          "high": 0.0
+        },
+        "per_class_f1": {
+          "NONE": {
+            "low": 1.0,
+            "high": 1.0
+          },
+          "RISING_STRESS_TRAJECTORY": {
+            "low": 0.9675043061749368,
+            "high": 0.9966782890913676
+          },
+          "RISING_CRAVING_TRAJECTORY": {
+            "low": 0.9573770491803278,
+            "high": 0.9931046291922532
+          },
+          "COMBINED_RELAPSE_RISK": {
+            "low": 0.893613365504131,
+            "high": 0.9576570170206908
+          }
+        }
+      },
+      "thresholds": {
+        "craving_high": 7.700000000000001,
+        "craving_very_high": 9.350000000000001,
+        "stress_high": 7.700000000000001,
+        "stress_very_high": 9.350000000000001,
+        "motivation_low": 3.3000000000000003,
+        "motivation_very_low": 2.2,
+        "self_efficacy_low": 3.3000000000000003,
+        "self_efficacy_very_low": 2.2,
+        "combined_very_high_sum": 18.700000000000003
+      }
+    }
+  },
+  "ambiguous_overlap": {
+    "n": 150,
+    "acceptable_candidate_set_accuracy": 1.0
+  }
+}
