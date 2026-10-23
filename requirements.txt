@@ -1,3 +1,4 @@
-kafka-python==2.2.19
-confluent-kafka
-requests
+kafka-python==2.3.0
+confluent-kafka==2.13.0
+requests==2.32.5
+websockets==16.0

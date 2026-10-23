@@ -1,14 +1,24 @@
-venv/
+# Python
 __pycache__/
-*.pyc
-*.log
-*.out
-*.csv
-*.jsonl
-.DS_Store
-.idea/
-.vscode/
+*.py[cod]
+venv/
+.venv/
 
-# Generated experiment artifacts
-/runs/
-/*_output.txt
+# Runtime outputs
+*_output.txt
+cep_output.txt
+intervention/intervention_state.json
+
+# Experiment/runtime archives
+runs/
+ksqldb/runs/
+results/
+
+# Local experiment backup files
+*.pre_nosemantic
+*.pre_queue_metrics
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store

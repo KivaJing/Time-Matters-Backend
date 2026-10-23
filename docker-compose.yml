@@ -67,7 +67,7 @@ services:
     restart: "no"
 
   ollama_full:
-    image: ollama/ollama:latest
+    image: ollama/ollama@sha256:5949ec041e62b28f92d5ff1d7c34080ec67efd73ad24a523e2ff558a24f33072
     environment:
       OLLAMA_HOST: 0.0.0.0:11434
       OLLAMA_NUM_PARALLEL: "2"
@@ -80,7 +80,7 @@ services:
     restart: unless-stopped
 
   ollama_fast:
-    image: ollama/ollama:latest
+    image: ollama/ollama@sha256:5949ec041e62b28f92d5ff1d7c34080ec67efd73ad24a523e2ff558a24f33072
     environment:
       OLLAMA_HOST: 0.0.0.0:11434
       OLLAMA_NUM_PARALLEL: "3"
