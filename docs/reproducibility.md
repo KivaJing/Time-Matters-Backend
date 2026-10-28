@@ -585,7 +585,7 @@ Large raw runtime outputs are maintained outside the Git repository.
 Experimental-data archive:
 
 ```text
-https://drive.google.com/drive/folders/1r9vvi5RApJTozvN7FXBSHUX0BZkzXins?usp=sharing
+https://doi.org/10.5281/zenodo.23747214
 ```
 
 The archive contains the formal evaluation outputs for:
