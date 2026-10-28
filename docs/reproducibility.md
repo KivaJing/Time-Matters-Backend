@@ -13,21 +13,21 @@ Repository:
 https://github.com/KivaJing/Time-Matters-Backend
 
 Release/tag:
-ieee-access-submission-v1.1
+ieee-access-submission-v1.2
 
 Repository snapshot date:
-2026-10-23
+2026-10-28
 
 Original experiment commit:
 fdfd306828b4bed0e76266ab7b43cca3167746b3
 ```
 
-The original experiment commit identifies the source-code state recorded in the formal experiment archives. The public reproducibility release additionally contains documentation, dependency pinning, runtime-output exclusions, the exact Ollama image digest observed on the experimental host, and the finalized reproduction scripts.
+The original experiment commit identifies the source-code state recorded in the formal experiment archives. The public reproducibility release additionally contains documentation, dependency pinning, runtime-output exclusions, the exact Ollama image digest observed on the experimental host, finalized reproduction scripts, and the post-hoc archive-analysis script used for the semantic-composition, severity-outcome, episode-coverage, and window-history diagnostics added during manuscript revision. The runtime experiments themselves were not re-executed for v1.2.
 
 The exact commit referenced by the annotated release tag can be verified after cloning with:
 
 ```bash
-git rev-list -n 1 ieee-access-submission-v1.1
+git rev-list -n 1 ieee-access-submission-v1.2
 ```
 
 ## 2. Experimental Environment
@@ -268,6 +268,48 @@ baseline_nosemantic_u100_r4
 baseline_nosemantic_u100_r5
 ```
 
+
+## 8.1 Post-hoc Scaling Archive Re-analysis
+
+The revised manuscript reports additional analyses derived from the frozen formal scaling archive without re-running the runtime experiment. The analysis script is:
+
+```bash
+python3 experiments/analyze_scaling_archive.py \
+  /path/to/scaling_20261008_144334.tar.gz \
+  --output scaling_archive_analysis
+```
+
+The script reconstructs the formal 200-s measurement intervals from the archived per-run observer logs and filters the Kafka topic dumps to those intervals before aggregation. It generates:
+
+```text
+semantic_event_type_distribution_by_load.csv
+severity_outcome_and_drop_reason_by_load.csv
+event_coverage_by_run.csv
+event_coverage_ci_by_load.csv
+episode_coverage_by_load.csv
+trajectory_window_diagnostic.csv
+raw_phase_values.csv
+summary.json
+```
+
+The script validates the following formal totals:
+
+```text
+semantic events:                 13,821
+explicit drops:                   6,570
+fast-LLM admitted requests:         625
+high-capacity-LLM requests:         213
+final interventions:                838
+```
+
+The analysis is post-hoc with respect to the archived experiment. The original experiment commit remains:
+
+```text
+fdfd306828b4bed0e76266ab7b43cca3167746b3
+```
+
+Release `ieee-access-submission-v1.2` adds the analysis code and documentation; it does not replace or modify the frozen runtime archive.
+
 ## 9. RQ3: Controlled Reasoning Baselines
 
 The baseline runner requires:
@@ -367,7 +409,7 @@ SHA256 of the benchmark script:
 30e89b9df816240f6796b35a7ed2fbaa8abf4364782edf0d25e2577864a81669
 ```
 
-This benchmark measures direct model-server decoding throughput separately from end-to-end application latency.
+This benchmark measures direct model-server decoding throughput separately from completed-path application latency.
 
 The high-capacity model runs reached the configured generation cap; therefore, the reported values should be interpreted as decoding throughput rather than natural-response latency.
 
@@ -418,7 +460,7 @@ queue_u200_r3
 
 The measured quantity is scheduler pending-buffer occupancy, not Kafka backlog.
 
-## 12. RQ4: Semantic Functional Correctness
+## 12. RQ4: Semantic Rule Conformance and Robustness
 
 Entry point:
 
